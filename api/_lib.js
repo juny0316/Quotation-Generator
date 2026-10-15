@@ -76,6 +76,8 @@ function supabase() {
   const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
   const key = (process.env.SUPABASE_SECRET_KEY || '').trim();
   if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SECRET_KEY 환경변수가 없습니다');
+  // 키는 HTTP 헤더로 보내므로 영문·숫자 기호만 가능. 다른 글을 잘못 붙여넣은 경우를 바로 알린다.
+  if (!/^[\x21-\x7e]+$/.test(key) || !/^(sb_secret_|eyJ)/.test(key)) throw new Error('SUPABASE_SECRET_KEY 값이 올바르지 않습니다. Supabase → Project Settings → API Keys의 Secret key(sb_secret_…)를 Vercel 환경변수에 다시 넣어 주세요');
   _sb = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   return _sb;
 }
