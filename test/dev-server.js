@@ -1,13 +1,24 @@
-// 로컬 테스트 서버: public/ 정적 파일 + api/ 함수. Supabase는 메모리 모의 응답.
+// 로컬 테스트 서버: public/ 정적 파일 + api/ 함수. 기본은 메모리 모의 DB, .env.local에 USE_REAL_SUPABASE=1이면 실제 Supabase.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 const ROOT = path.join(__dirname, '..');
 
+// .env.local(커밋 안 됨)의 값을 읽는다. 이미 설정된 환경변수가 우선.
+const envFile = path.join(ROOT, '.env.local');
+if (fs.existsSync(envFile)) {
+  fs.readFileSync(envFile, 'utf8').split(/\r?\n/).forEach((line) => {
+    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+    if (m && m[2] !== '' && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+  });
+}
+const REAL_DB = process.env.USE_REAL_SUPABASE === '1';
 process.env.APP_PASSWORD = process.env.APP_PASSWORD || 'test-pass';
-process.env.SUPABASE_URL = 'http://mock';
-process.env.SUPABASE_SECRET_KEY = 'sb_secret_mock';
+if (!REAL_DB) {
+  process.env.SUPABASE_URL = 'http://mock';
+  process.env.SUPABASE_SECRET_KEY = 'sb_secret_mock';
+}
 
 // ---- Supabase 모의 ----
 const table = new Map();
@@ -30,9 +41,11 @@ function q() {
   };
   return api;
 }
-const origResolve = Module._resolveFilename;
-Module._resolveFilename = function (req, ...a) { if (req === '@supabase/supabase-js') return req; return origResolve.call(this, req, ...a); };
-require.cache['@supabase/supabase-js'] = { id: '@supabase/supabase-js', filename: '@supabase/supabase-js', loaded: true, exports: { createClient: () => ({ from: () => q() }) } };
+if (!REAL_DB) {
+  const origResolve = Module._resolveFilename;
+  Module._resolveFilename = function (req, ...a) { if (req === '@supabase/supabase-js') return req; return origResolve.call(this, req, ...a); };
+  require.cache['@supabase/supabase-js'] = { id: '@supabase/supabase-js', filename: '@supabase/supabase-js', loaded: true, exports: { createClient: () => ({ from: () => q() }) } };
+}
 
 const handlers = { login: require('../api/login.js'), docs: require('../api/docs.js') };
 const server = http.createServer(async (req, res) => {
@@ -43,4 +56,4 @@ const server = http.createServer(async (req, res) => {
   if (fs.existsSync(f) && fs.statSync(f).isFile()) { res.setHeader('Content-Type', f.endsWith('.html') ? 'text/html; charset=utf-8' : 'application/octet-stream'); fs.createReadStream(f).pipe(res); }
   else { res.statusCode = 404; res.end('not found'); }
 });
-server.listen(process.env.PORT || 3999, () => console.log('dev server on', server.address().port));
+server.listen(process.env.PORT || 3999, () => console.log('dev server on', server.address().port, REAL_DB ? '(실제 Supabase 연결)' : '(메모리 모의 DB)'));

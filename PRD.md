@@ -7,7 +7,7 @@
 | 문서 버전 | v0.1 (초안) |
 | 작성일 | 2026-10-15 |
 | 저장소 | https://github.com/juny0316/Quotation-Generator |
-| 배포 | Vercel (예정) · DB/인증: Supabase (프로젝트 `oryjutumjluttofaviie`, ap-northeast-2) |
+| 배포 | Vercel (예정) · DB/인증: Supabase (프로젝트 주소·키는 `.env.local`·Vercel 환경변수에서만 관리) |
 
 ---
 
@@ -193,7 +193,7 @@
 
 | 이름 | 공개 여부 |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` = `https://oryjutumjluttofaviie.supabase.co` | 공개 가능 |
+| `NEXT_PUBLIC_SUPABASE_URL` (값은 `.env.local`) | 공개 가능 |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | 공개 가능 (RLS 전제) |
 | `SUPABASE_SECRET_KEY` | **서버 전용** (필요 시) |
 | `ANTHROPIC_API_KEY` | **서버 전용** |

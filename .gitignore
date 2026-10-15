@@ -1,4 +1,6 @@
 node_modules/
+# 비밀값은 .env.local 에만 (커밋 금지). 예시 파일만 커밋
 .env*
+!.env.example
 .vercel/
 .DS_Store

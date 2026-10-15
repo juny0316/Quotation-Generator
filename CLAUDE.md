@@ -55,5 +55,6 @@ Claude Code가 이 저장소에서 작업을 이어받기 위한 문서. 요구�
 - `.msg`(Outlook 원본)·HWP는 읽지 못함 → 본문 복사/PDF 변환 안내.
 - 헤드리스 리눅스 Chromium에서는 한글 다운로드 파일명이 "download"로 나왔음(테스트 환경 특성). 실제 Windows Chrome/Edge에서 확인 필요.
 - 화면 코드 수정 후 반드시 `node build.js`로 `public/index.html` 재생성(Vercel도 배포 시 실행).
+- **비밀값 규칙**: 키·비밀번호·Supabase 주소 같은 실제 값은 커밋 금지. 로컬은 `.env.local`(gitignore, `.env.example`이 양식), 배포는 Vercel 환경변수에만. `test/dev-server.js`가 `.env.local`을 읽음(기본 모의 DB, `USE_REAL_SUPABASE=1`이면 실제 DB).
 - `test/e2e.js`는 Playwright 경로·node_modules 경로를 환경변수(`PW_PATH`, `NM_PATH`, `OUT_DIR`, `PURCHASE_XLSX`)로 받음. 로컬 비밀번호 `test-pass`.
 - 견적서 엑셀 인쇄영역: ExcelJS `printArea`는 `'A$1:K$n'` 형식으로 넣어야 `$A$1:$K$n`이 됨(이미 반영).

@@ -15,20 +15,26 @@
 | `supabase/schema.sql` | DB 테이블 만들기 (SQL Editor에서 1회 실행) |
 | `test/` | 계산 로직 테스트, 로컬 개발 서버(모의 DB), 브라우저 흐름 테스트 |
 
-## Vercel 환경변수
+## 비밀값 관리
+
+**비밀번호·키 같은 실제 값은 git에 올리지 않습니다.**
+
+- 배포(Vercel): Vercel → Settings → Environment Variables 에만 넣습니다.
+- 로컬: `.env.example`을 복사해 `.env.local`을 만들고 값을 채웁니다. `.env.local`은 `.gitignore`로 커밋되지 않습니다.
 
 | 이름 | 값 |
 |---|---|
 | `APP_PASSWORD` | 팀 공용 비밀번호 |
-| `SUPABASE_URL` | `https://oryjutumjluttofaviie.supabase.co` |
-| `SUPABASE_SECRET_KEY` | Supabase → Project Settings → API Keys → Secret key |
+| `SUPABASE_URL` | Supabase → Project Settings → Data API 의 Project URL |
+| `SUPABASE_SECRET_KEY` | Supabase → Project Settings → API Keys → Secret key (`sb_secret_…`) |
+| `USE_REAL_SUPABASE` | 로컬 테스트 서버만: `1`이면 실제 DB, 비우면 모의 DB |
 
 ## 로컬 실행
 
 ```
 npm install
 node build.js
-node test/dev-server.js   # http://localhost:3999 , 비밀번호 test-pass (모의 DB)
+node test/dev-server.js   # http://localhost:3999 , .env.local 의 APP_PASSWORD (없으면 test-pass) · 기본 모의 DB
 npm test                  # 계산 로직 테스트
 ```
 
