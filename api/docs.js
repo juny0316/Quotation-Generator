@@ -47,6 +47,8 @@ module.exports = async (req, res) => {
     }
     return send(res, 405, { error: 'method' });
   } catch (e) {
-    return send(res, 500, { error: 'server', message: String((e && e.message) || e) });
+    const message = String((e && e.message) || e);
+    console.error('[docs]', req.method, (e && e.code) || '', message);
+    return send(res, 500, { error: 'server', message: message });
   }
 };

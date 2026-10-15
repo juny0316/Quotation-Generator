@@ -3438,7 +3438,7 @@ function App() {
       await saveProjectDocs(p);
       setView('projects');
       setOpenId(id);
-    } catch (e) { toast('새 견적을 만들지 못했습니다', 'bad'); }
+    } catch (e) { console.error(e); toast('새 견적을 만들지 못했습니다' + (e && e.message ? ' — ' + e.message : ''), 'bad'); }
     finally { setCreating(false); }
   }
 

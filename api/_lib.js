@@ -72,8 +72,9 @@ let _sb = null;
 function supabase() {
   if (_sb) return _sb;
   const { createClient } = require('@supabase/supabase-js');
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY;
+  // 붙여넣을 때 섞인 공백·줄바꿈은 헤더 오류를 내므로 잘라 낸다
+  const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const key = (process.env.SUPABASE_SECRET_KEY || '').trim();
   if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SECRET_KEY 환경변수가 없습니다');
   _sb = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   return _sb;
