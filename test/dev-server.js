@@ -7,7 +7,7 @@ const ROOT = path.join(__dirname, '..');
 
 process.env.APP_PASSWORD = process.env.APP_PASSWORD || 'test-pass';
 process.env.SUPABASE_URL = 'http://mock';
-process.env.SUPABASE_SECRET_KEY = 'mock-secret';
+process.env.SUPABASE_SECRET_KEY = 'sb_secret_mock';
 
 // ---- Supabase 모의 ----
 const table = new Map();

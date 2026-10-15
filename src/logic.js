@@ -197,7 +197,7 @@
           add('bad', nm + ' — 금액 계산 불일치 (' + f(u) + ' × ' + qty + ' = ' + f(calc) + ', 견적서 ' + f(amt) + ')');
         }
       }
-      if (!q.reqItemId) add('info', '요청 외 항목: ' + nm + (amt !== null ? ' ' + f(amt) + '원' : ''));
+      if (!q.reqItemId && items.length) add('info', '요청 외 항목: ' + nm + (amt !== null ? ' ' + f(amt) + '원' : ''));
     });
 
     const sumAmt = qItems.reduce((s, q) => s + (L.quoteItemAmount(q) || 0), 0);
@@ -279,7 +279,18 @@
     };
   };
 
-  L.buildSalesLines = function (project, defaults) {
+  /* 요청 품목 없이 매입 견적부터 시작한 경우: 견적서 품목을 그대로 매출 견적 줄로 쓴다 */
+  L.quoteOnly = function (project) { return !(project.items || []).length && (project.quotes || []).length > 0; };
+  L.baseQuote = function (project, quoteId) {
+    const quotes = project.quotes || [];
+    return quotes.find((q) => q.id === quoteId) || quotes[0] || null;
+  };
+
+  L.buildSalesLines = function (project, defaults, quoteId) {
+    if (L.quoteOnly(project)) {
+      const qt = L.baseQuote(project, quoteId);
+      return (qt.items || []).map((qi) => L.makeLineFromQuote(project, null, qt, qi, defaults));
+    }
     const adopt = L.effectiveAdopt(project);
     return (project.items || []).map((it) => {
       const hit = L.findQuoteItem(project, adopt[it.id]);
@@ -301,9 +312,22 @@
 
   /* 견적 주석 후보(변경 사항) — 채택된 견적 품목 기준 */
   L.collectDeviations = function (project) {
-    const adopt = L.effectiveAdopt(project);
     const out = [];
     const seen = new Set();
+    if (L.quoteOnly(project)) {
+      const used = new Set((((project.sales && project.sales.lines) || [])).map((ln) => ln.src && ln.src.quoteId).filter(Boolean));
+      (project.quotes || []).forEach((qt) => {
+        if (used.size && !used.has(qt.id)) return;
+        (qt.deviations || []).forEach((d) => {
+          const key = (d.title || '') + '|' + (d.reason || '');
+          if (!d.title || seen.has(key)) return;
+          seen.add(key);
+          out.push({ id: L.uid('n'), title: d.title || '', reason: d.reason || '' });
+        });
+      });
+      return out;
+    }
+    const adopt = L.effectiveAdopt(project);
     Object.keys(adopt).forEach((reqId) => {
       const a = adopt[reqId];
       if (!a) return;

@@ -54,6 +54,32 @@ assert.strictEqual(tot.supply, 145556000);
 assert.strictEqual(tot.cost, 131000000);
 console.log(L.collectDeviations(project));
 console.log(L.extraQuoteItems(project).length, 'extras (q2 not adopted → 0)');
+// 요청 품목 없이 매입 견적부터 시작
+const qOnly = {
+  items: [],
+  quotes: [
+    { id: 'q1', vendorName: 'A', vat: 'excluded', items: [
+      { id: 'a1', reqItemId: null, model: 'SR650 V4', name: 'GPU서버', qty: 2, unitPrice: 65500000, amount: 131000000, match: 'extra', specs: [{ cat: 'GPU', detail: 'RTX 6000 Ada', spec: '2EA' }] },
+      { id: 'a2', reqItemId: null, name: '배송비', qty: 1, unitPrice: 110000, amount: 110000, match: 'extra' }],
+      deviations: [{ reqItemId: null, title: 'GPU 모델 변경', reason: '' }] },
+    { id: 'q2', vendorName: 'B', vat: 'included', items: [{ id: 'b1', reqItemId: null, model: 'X', qty: 1, unitPrice: 1100000, amount: 1100000, match: 'extra' }] }
+  ]
+};
+assert.strictEqual(L.quoteOnly(qOnly), true);
+assert.strictEqual(L.quoteOnly({ items: [], quotes: [] }), false);
+assert.strictEqual(L.quoteOnly(project), false);
+const qLines = L.buildSalesLines(qOnly, { gpRate: 10, priceRound: 1000 });
+assert.deepStrictEqual(qLines.map((l) => [l.category, l.name, l.qty, l.costUnit, l.unitPrice, l.vendorName]),
+  [['GPU서버', 'SR650 V4', 2, 65500000, 72778000, 'A'], ['배송비', '배송비', 1, 110000, 123000, 'A']]);
+assert.strictEqual(qLines[0].specs.length, 1);
+assert.strictEqual(L.salesTotals(qLines).supply, 145679000);
+const qLinesB = L.buildSalesLines(qOnly, { gpRate: 10, priceRound: 1000 }, 'q2');
+assert.deepStrictEqual(qLinesB.map((l) => [l.vendorName, l.costUnit, l.unitPrice]), [['B', 1000000, 1112000]]);
+qOnly.sales = { lines: qLines };
+assert.deepStrictEqual(L.collectDeviations(qOnly).map((d) => d.title), ['GPU 모델 변경']);
+qOnly.sales = { lines: qLinesB };
+assert.deepStrictEqual(L.collectDeviations(qOnly), []);
+assert.ok(!L.reviewQuote(qOnly, qOnly.quotes[0], '2026-03-06').findings.some((f) => /요청 외 항목/.test(f.text)));
 // eml
 const eml = L.buildEml({ to: [{ name: '에이사 김대리', email: 'kim@a.com' }], subject: '[유니포인트] 견적 요청 - AI GPU서버 도입 (UP-261015-01) 아주 긴 제목 테스트입니다', text: '안녕하세요\n본문', html: '<p>안녕하세요</p>', attachments: [{ filename: '견적요청서_UP-261015-01.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes: new Uint8Array([1,2,3,4,5]) }] });
 console.log(eml.split('\r\n').slice(0, 12).join('\n'));

@@ -41,6 +41,7 @@ Claude Code가 이 저장소에서 작업을 이어받기 위한 문서. 요구�
 - **Vercel 배포 완료**: 프로젝트 `quotation-generator` (팀 juny031612-1489's projects), 주소 https://quotation-generator-blond.vercel.app — `main` push 시 자동 배포
 - Vercel 환경변수(Production/Preview): `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `APP_PASSWORD`. (`ANTHROPIC_MODEL`이 남아 있으면 쓰지 않으므로 지워도 됨)
 - AI 기능 제거: 1단계·4단계 직접 입력, 첨부파일은 미리보기만
+- 4단계부터 시작 가능: 1단계 [매입 견적서로 바로 시작] → 요청 품목 없이 매입 견적 입력 → 5단계에서 견적 품목 그대로 매출 견적서 생성 (`L.quoteOnly`, `L.buildSalesLines(p, d, quoteId)`)
 - 계산 검증: 매입 65,500,000 · GP 10% → 72,778,000 / ×2 → GP 14,556,000 (10.0%)
 
 ### 미완료 (다음 할 일)

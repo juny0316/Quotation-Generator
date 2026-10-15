@@ -156,7 +156,8 @@ function StepRequest({ p, up, go }) {
       </section>
     </div>
 
-    <${StepNav} next="요청 정리" nextLabel=${(p.items || []).length ? '정리된 품목 보기' : '품목표 입력하기'} onNext=${() => go(2)} />
+    <${StepNav} next="요청 정리" nextLabel=${(p.items || []).length ? '정리된 품목 보기' : '품목표 입력하기'} onNext=${() => go(2)}
+      extra=${(p.items || []).length ? null : html`<button class="btn" title="고객 요청 정리 없이 받은 매입 견적서로 바로 매출 견적서를 만듭니다" onClick=${() => go(4)}>매입 견적서로 바로 시작</button>`} />
   </div>`;
 }
 
@@ -409,7 +410,7 @@ function QuoteCard({ p, qt, qi, up, vendors, saveVendor, open, onToggle }) {
   return html`<div class="panel qcard">
     <div class="panel-h">
       <div style="flex:1;min-width:220px" class="stack" >
-        <div class="row" style="gap:8px"><b style="font-size:15px">${qt.vendorName || '매입처 미지정'}</b>${status}${warn}${!rv.counts.bad && !rv.counts.warn ? html`<span class="chip ok">요청과 일치</span>` : null}${qt.vat === 'included' ? html`<span class="chip info">VAT 포함 견적</span>` : null}</div>
+        <div class="row" style="gap:8px"><b style="font-size:15px">${qt.vendorName || '매입처 미지정'}</b>${status}${warn}${!rv.counts.bad && !rv.counts.warn ? html`<span class="chip ok">${items.length ? '요청과 일치' : '검토 이상 없음'}</span>` : null}${qt.vat === 'included' ? html`<span class="chip info">VAT 포함 견적</span>` : null}</div>
         <div class="xs faint">${[qt.quoteNo ? '견적번호 ' + qt.quoteNo : '', qt.quoteDate ? '견적일 ' + qt.quoteDate : '', '받은 날 ' + (qt.receivedAt || ''), rv.validUntil ? '유효 ~' + rv.validUntil : ''].filter(Boolean).join(' · ')}</div>
       </div>
       <div class="right"><div class="xs faint">품목 합계(견적서 기준)</div><b class="num" style="font-size:16px">${L.fmt(sum)}원</b></div>
@@ -431,23 +432,23 @@ function QuoteCard({ p, qt, qi, up, vendors, saveVendor, open, onToggle }) {
             : html`<pre>${qt.source.text}</pre>`}</div>
         </details>` : null}
         <div class="tbl-wrap"><table class="tbl" style="min-width:1040px">
-          <thead><tr><th style="width:17%">요청 품목</th><th>모델 · 품명</th><th class="num" style="width:70px">수량</th><th style="width:60px">단위</th><th class="num" style="width:130px">제안 단가</th><th class="num" style="width:140px">금액</th><th style="width:118px">대응</th><th style="width:70px"></th></tr></thead>
+          <thead><tr>${items.length ? html`<th style="width:17%">요청 품목</th>` : null}<th>모델 · 품명</th><th class="num" style="width:70px">수량</th><th style="width:60px">단위</th><th class="num" style="width:130px">제안 단가</th><th class="num" style="width:140px">금액</th>${items.length ? html`<th style="width:118px">대응</th>` : null}<th style="width:70px"></th></tr></thead>
           <tbody>${qt.items.map((it, k) => {
             const calc = L.num(it.unitPrice) !== null && L.num(it.qty) !== null ? L.num(it.unitPrice) * L.num(it.qty) : null;
             const bad = calc !== null && L.num(it.amount) !== null && Math.abs(calc - L.num(it.amount)) > Math.max(1, Math.abs(L.num(it.amount)) * 0.0005);
             return html`<${Fragment} key=${it.id}><tr class=${bad ? 'flag-bad' : it.match === 'partial' || it.match === 'alternative' ? 'flag-warn' : ''}>
-              <td><select class="select" aria-label="요청 품목" value=${it.reqItemId || ''} onChange=${(e) => setQ((t) => { t.items[k].reqItemId = e.target.value || null; if (!e.target.value) t.items[k].match = 'extra'; else if (t.items[k].match === 'extra') t.items[k].match = 'partial'; })}>
-                <option value="">요청 외 항목</option>${items.map((r, i) => html`<option key=${r.id} value=${r.id}>${i + 1}. ${r.name}</option>`)}</select></td>
+              ${items.length ? html`<td><select class="select" aria-label="요청 품목" value=${it.reqItemId || ''} onChange=${(e) => setQ((t) => { t.items[k].reqItemId = e.target.value || null; if (!e.target.value) t.items[k].match = 'extra'; else if (t.items[k].match === 'extra') t.items[k].match = 'partial'; })}>
+                <option value="">요청 외 항목</option>${items.map((r, i) => html`<option key=${r.id} value=${r.id}>${i + 1}. ${r.name}</option>`)}</select></td>` : null}
               <td><div class="stack s8" style="gap:4px"><input class="input" aria-label="모델" value=${it.model} placeholder="모델" onInput=${(e) => setIt(k, 'model', e.target.value)} /><input class="input" aria-label="품명" value=${it.name} placeholder="품명 · 구성명" onInput=${(e) => setIt(k, 'name', e.target.value)} />${it.matchNote ? html`<div class="xs" style="color:var(--warn)">${it.matchNote}</div>` : null}</div></td>
               <td><${NumInput} ariaLabel="수량" value=${it.qty} onChange=${(v) => setIt(k, 'qty', v)} /></td>
               <td><input class="input" aria-label="단위" value=${it.unit} onInput=${(e) => setIt(k, 'unit', e.target.value)} /></td>
               <td><${NumInput} ariaLabel="제안 단가" value=${it.unitPrice} onChange=${(v) => setIt(k, 'unitPrice', v)} />${it.listPrice ? html`<div class="xs faint right">정가 ${L.fmt(it.listPrice)}</div>` : null}</td>
               <td><${NumInput} ariaLabel="금액" value=${it.amount} onChange=${(v) => setIt(k, 'amount', v)} />${bad ? html`<div class="xs right gp-low">계산값 ${L.fmt(calc)}</div>` : null}</td>
-              <td><select class="select" aria-label="대응" value=${it.match} onChange=${(e) => setIt(k, 'match', e.target.value)}>${Object.keys(MATCH_LABEL).map((m) => html`<option key=${m} value=${m}>${MATCH_LABEL[m]}</option>`)}</select></td>
+              ${items.length ? html`<td><select class="select" aria-label="대응" value=${it.match} onChange=${(e) => setIt(k, 'match', e.target.value)}>${Object.keys(MATCH_LABEL).map((m) => html`<option key=${m} value=${m}>${MATCH_LABEL[m]}</option>`)}</select></td>` : null}
               <td><div class="cell-actions"><button class="btn ghost sm" onClick=${() => setPartsOpen(partsOpen === it.id ? null : it.id)} aria-label="구성 보기">${(it.parts || []).length ? '파트 ' + it.parts.length : '사양'}</button>
                 <button class="btn ghost icon sm" aria-label="행 삭제" onClick=${() => setQ((t) => { t.items.splice(k, 1); })}><${Icon} name="x" size=${14} /></button></div></td>
             </tr>
-            ${partsOpen === it.id ? html`<tr class="sub"><td colspan="8"><div class="grid2" style="align-items:start">
+            ${partsOpen === it.id ? html`<tr class="sub"><td colspan=${items.length ? 8 : 6}><div class="grid2" style="align-items:start">
               <div class="stack s8"><b class="small">고객용 주요 사양 <span class="faint">(매출 견적서 상세내역으로 들어갑니다)</span></b>
                 <${SpecEditor} specs=${it.specs || []} onChange=${(fn) => setQ((t) => { t.items[k].specs = t.items[k].specs || []; fn(t.items[k].specs); })} />
               </div>
@@ -552,6 +553,8 @@ function StepQuotes({ p, up, vendors, go, saveVendor }) {
     const qt = { id: L.uid('qt'), vendorId: v ? v.id : null, vendorName: v ? v.name : '', vendorContact: {}, receivedAt: L.today(), quoteNo: '', quoteDate: L.today(), vat: 'excluded',
       items: (p.items || []).map((it) => ({ id: L.uid('qi'), reqItemId: it.id, model: it.model || '', name: it.name, summary: '', qty: it.qty, unit: it.unit, listPrice: null, unitPrice: null, amount: null, parts: [], specs: [], note: '', match: 'exact', matchNote: '' })),
       totals: { supply: null, vat: null, total: null }, terms: { validUntil: '', warranty: '', delivery: '', payment: '', shipping: '', note: '' }, deviations: [] };
+    // 요청 품목 없이 시작한 경우: 견적서 품목을 적을 빈 줄 하나
+    if (!qt.items.length) qt.items.push({ id: L.uid('qi'), reqItemId: null, model: '', name: '', summary: '', qty: 1, unit: 'EA', listPrice: null, unitPrice: null, amount: null, parts: [], specs: [], note: '', match: 'extra', matchNote: '' });
     if (text) {
       const ready = fr.files.filter((f) => f.status === 'ready');
       const sheets = [];
@@ -583,7 +586,7 @@ function StepQuotes({ p, up, vendors, go, saveVendor }) {
         <${FilePreview} file=${openedFile} onClose=${() => setOpenF(null)} />
         <div class="row">
           <button class="btn primary" disabled=${reading} onClick=${addQuote}><${Icon} name="plus" />매입 견적 추가</button>
-          ${!(p.items || []).length ? html`<span class="small" style="color:var(--warn)">요청 품목이 없으면 일치 여부를 검토할 수 없습니다(2단계).</span>` : html`<span class="small muted">요청 품목 ${(p.items || []).length}개가 미리 채워진 표가 만들어집니다.</span>`}
+          ${!(p.items || []).length ? html`<span class="small muted">요청 품목 없이 시작합니다. 견적서의 품목을 표에 옮겨 적으면 그대로 매출 견적서 줄이 됩니다.</span>` : html`<span class="small muted">요청 품목 ${(p.items || []).length}개가 미리 채워진 표가 만들어집니다.</span>`}
         </div>
       </div>
     </section>
@@ -607,6 +610,9 @@ function StepSales({ p, up, settings, go }) {
   const [openSpec, setOpenSpec] = useState(null);
   const [busy, setBusy] = useState('');
   const [rebuildArm, setRebuildArm] = useState(false);
+  const quoteOnly = L.quoteOnly(p);
+  // 다시 만들 때도 지금 줄을 만든 매입 견적을 그대로 쓴다
+  const [baseQ, setBaseQ] = useState(() => { const ln = lines.find((x) => x.src && x.src.quoteId); return ln ? ln.src.quoteId : null; });
   const tot = L.salesTotals(lines);
   const low = (L.num(settings.defaults.lowGp) || 0) / 100;
   const extras = L.extraQuoteItems(p).filter((e) => !lines.some((ln) => ln.src && ln.src.quoteItemId === e.qi.id));
@@ -615,7 +621,7 @@ function StepSales({ p, up, settings, go }) {
   function build() {
     up((x) => {
       x.sales = x.sales || {};
-      x.sales.lines = L.buildSalesLines(x, { gpRate: gpAll, priceRound: unit });
+      x.sales.lines = L.buildSalesLines(x, { gpRate: gpAll, priceRound: unit }, baseQ);
       x.sales.date = x.sales.date || L.today();
       x.sales.validity = x.sales.validity || settings.defaults.validity;
       if (!x.sales.conditions) x.sales.conditions = (settings.defaults.conditions || []).slice();
@@ -642,12 +648,18 @@ function StepSales({ p, up, settings, go }) {
   if (!lines.length) {
     const adopt = L.effectiveAdopt(p);
     const withCost = Object.values(adopt).filter(Boolean).length;
+    const quotes = p.quotes || [];
+    const bq = quoteOnly ? L.baseQuote(p, baseQ) : null;
     return html`<div class="stack s16">
       <section class="panel"><div class="panel-b stack" style="align-items:flex-start;gap:14px">
         <h3 style="font-size:18px">매입 견적으로 매출 견적서 만들기</h3>
-        <p class="muted">요청 품목 ${(p.items || []).length}개 중 ${withCost}개에 매입가가 있습니다. 제안 단가 = 매입 단가 ÷ (1 − GP%), ${L.fmt(unit)}원 단위 올림.</p>
+        ${quoteOnly ? html`<p class="muted">${bq.vendorName || '매입처 미지정'} 견적의 품목 ${(bq.items || []).length}개를 그대로 매출 견적서 줄로 만듭니다. 제안 단가 = 매입 단가 ÷ (1 − GP%), ${L.fmt(unit)}원 단위 올림.</p>
+          ${quotes.length > 1 ? html`<label class="field" style="min-width:260px"><span>사용할 매입 견적</span><select id="sales-base" class="select" value=${bq.id} onChange=${(e) => setBaseQ(e.target.value)}>
+            ${quotes.map((q, i) => html`<option key=${q.id} value=${q.id}>${i + 1}. ${q.vendorName || '매입처 미지정'} · 품목 ${(q.items || []).length}개 · ${L.fmt(L.reviewQuote(p, q).sumAmt)}원</option>`)}</select></label>` : null}`
+        : !(p.items || []).length ? html`<p class="muted">아직 매입 견적이 없습니다. 4단계에서 받은 매입 견적서를 먼저 넣거나, 빈 견적서로 시작하세요.</p>`
+        : html`<p class="muted">요청 품목 ${(p.items || []).length}개 중 ${withCost}개에 매입가가 있습니다. 제안 단가 = 매입 단가 ÷ (1 − GP%), ${L.fmt(unit)}원 단위 올림.</p>`}
         <div class="row"><label class="field" style="width:140px"><span>GP%</span><${NumInput} id="gp-init" decimals=${1} value=${gpAll} onChange=${setGpAll} /></label>
-          <button class="btn primary lg" style="align-self:flex-end" onClick=${build}><${Icon} name="spark" />견적서 만들기</button>
+          <button class="btn primary lg" style="align-self:flex-end" disabled=${!(p.items || []).length && !quotes.length} onClick=${build}><${Icon} name="spark" />견적서 만들기</button>
           <button class="btn lg" style="align-self:flex-end" onClick=${addLine}>빈 견적서로 시작</button></div>
       </div></section>
       <${StepNav} prev="매입 검토" onPrev=${() => go(4)} />
