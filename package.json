@@ -1,0 +1,14 @@
+{
+  "name": "quotation-generator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "유니포인트 견적서 생성기 — 고객 요청부터 매출 견적서·원가분석표까지",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test/logic.test.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@supabase/supabase-js": "2.45.4"
+  }
+}
