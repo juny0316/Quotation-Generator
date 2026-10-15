@@ -285,11 +285,8 @@ function App() {
     (async () => {
       if (auth === 'ok') {
         Store.init('api');
-        RT.sample = AI.serverSample;
-        RT.imageLimits = (await AI.serverSample.limits()).images;
       } else {
         Store.init(null);
-        RT.sample = null;
       }
       RT.ready = true; RT.mode = auth === 'ok' ? 'api' : 'local';
       unsubs.push(Store.onStatus(setSs));
@@ -401,7 +398,7 @@ function Welcome({ list, onNew, onOpen, creating }) {
   return html`<div class="stack s20">
     <section class="panel"><div class="panel-b stack s16" style="padding:24px">
       <div class="stack s8" style="gap:4px"><h2 style="font-size:22px;letter-spacing:-.02em">고객 요청부터 원가분석표까지 한 화면에서</h2>
-        <p class="muted">서식이 제각각인 고객 요청과 매입 견적은 AI가 표로 정리하고, 매출 견적서는 유니포인트 양식 그대로 만듭니다.</p></div>
+        <p class="muted">고객 요청과 매입 견적을 표로 정리하고, 매출 견적서는 유니포인트 양식 그대로 만듭니다.</p></div>
       <div class="grid3">${flow.map((s) => html`<div key=${s.n} class="row" style="flex-wrap:nowrap;align-items:flex-start;gap:10px">
         <span class="chip brand num" style="width:24px;justify-content:center;padding:0">${s.n}</span>
         <div><b>${s.title}</b><div class="small muted">${s.sub}</div></div></div>`)}</div>

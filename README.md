@@ -12,9 +12,8 @@
 | `public/index.html` | `node build.js`로 만드는 배포용 단일 페이지 |
 | `api/login.js` | 팀 공용 비밀번호 확인 → 30일 쿠키 |
 | `api/docs.js` | 데이터 저장소 (Supabase `docs` 테이블) |
-| `api/ai.js` | AI 정리 (Anthropic API, 서버에서만 호출) |
 | `supabase/schema.sql` | DB 테이블 만들기 (SQL Editor에서 1회 실행) |
-| `test/` | 계산 로직 테스트, 로컬 개발 서버(모의 DB·AI), 브라우저 흐름 테스트 |
+| `test/` | 계산 로직 테스트, 로컬 개발 서버(모의 DB), 브라우저 흐름 테스트 |
 
 ## Vercel 환경변수
 
@@ -23,15 +22,13 @@
 | `APP_PASSWORD` | 팀 공용 비밀번호 |
 | `SUPABASE_URL` | `https://oryjutumjluttofaviie.supabase.co` |
 | `SUPABASE_SECRET_KEY` | Supabase → Project Settings → API Keys → Secret key |
-| `ANTHROPIC_API_KEY` | console.anthropic.com 에서 발급 |
-| `ANTHROPIC_MODEL` (선택) | 기본 `claude-sonnet-4-5` |
 
 ## 로컬 실행
 
 ```
 npm install
 node build.js
-node test/dev-server.js   # http://localhost:3999 , 비밀번호 test-pass (모의 DB·AI)
+node test/dev-server.js   # http://localhost:3999 , 비밀번호 test-pass (모의 DB)
 npm test                  # 계산 로직 테스트
 ```
 

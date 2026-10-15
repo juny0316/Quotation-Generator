@@ -32,28 +32,68 @@ function StepNav({ prev, next, nextLabel, onPrev, onNext, extra, nextDisabled })
   </div>`;
 }
 
-function FileChips({ files, onRemove }) {
+function fileInfo(f) {
+  if (f.status === 'reading') return '읽는 중';
+  if (f.status === 'error') return f.note || '읽지 못함';
+  if (f.kind === 'images') return '이미지 ' + (f.images || []).length + '장';
+  return L.fmt((f.text || '').length) + '자';
+}
+
+function FileChips({ files, onRemove, openId, onOpen }) {
   if (!files.length) return null;
-  return html`<div class="files">${files.map((f) => html`<span key=${f.id || f.name} class="fchip" title=${f.note || ''}>
-    ${f.status === 'reading' ? html`<span class="spin" style="width:12px;height:12px;color:var(--brand)"></span>` : html`<${Icon} name="file" size=${14} />`}
-    <span class="nm">${f.name}</span>
-    <span class=${'xs ' + (f.status === 'error' ? 'gp-low' : 'faint')}>${f.status === 'reading' ? '읽는 중' : f.status === 'error' ? (f.note || '읽지 못함') : (f.kind === 'images' ? '이미지 ' + (f.images || []).length + '장' : L.fmt((f.text || '').length) + '자')}</span>
-    ${onRemove ? html`<button aria-label=${f.name + ' 빼기'} onClick=${() => onRemove(f)}><${Icon} name="x" size=${13} /></button>` : null}
-  </span>`)}</div>`;
+  return html`<div class="files">${files.map((f) => {
+    const canOpen = onOpen && f.status === 'ready';
+    return html`<span key=${f.id || f.name} class=${'fchip' + (openId === f.id ? ' on' : '')} title=${f.note || ''}>
+      ${f.status === 'reading' ? html`<span class="spin" style="width:12px;height:12px;color:var(--brand)"></span>` : html`<${Icon} name="file" size=${14} />`}
+      ${canOpen ? html`<span class="nm link" role="button" tabindex="0" onClick=${() => onOpen(openId === f.id ? null : f.id)}
+          onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(openId === f.id ? null : f.id); } }}>${f.name}</span>` : html`<span class="nm">${f.name}</span>`}
+      <span class=${'xs ' + (f.status === 'error' ? 'gp-low' : 'faint')}>${fileInfo(f)}</span>
+      ${onRemove ? html`<button aria-label=${f.name + ' 빼기'} onClick=${() => onRemove(f)}><${Icon} name="x" size=${13} /></button>` : null}
+    </span>`;
+  })}</div>`;
+}
+
+function SheetTables({ sheets }) {
+  return sheets.map((sh, k) => html`<div key=${k} class="stack s8" style="margin-bottom:12px">
+    ${sheets.length > 1 ? html`<b class="small">${sh.name}</b>` : null}
+    <table class="tbl sheet"><tbody>${sh.rows.map((r, i) => html`<tr key=${i}>${r.map((v, j) => html`<td key=${j}>${v}</td>`)}</tr>`)}</tbody></table>
+  </div>`);
+}
+
+/* 첨부 내용 보기: 엑셀·PDF·워드·메일은 읽은 글자, 이미지·스캔 PDF는 그림 */
+function FilePreview({ file, onClose }) {
+  const [urls, setUrls] = useState([]);
+  useEffect(() => {
+    const u = ((file && file.images) || []).map((b) => URL.createObjectURL(b));
+    setUrls(u);
+    return () => u.forEach((x) => URL.revokeObjectURL(x));
+  }, [file]);
+  if (!file) return null;
+  return html`<div class="fpreview">
+    <div class="fpreview-h"><${Icon} name="file" size=${14} /><b class="small" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${file.name}</b>
+      <span class="xs faint">${file.note || ''}</span>
+      ${file.text ? html`<button class="btn ghost sm" onClick=${() => copyText(file.text, '파일 내용')}><${Icon} name="copy" size=${13} />복사</button>` : null}
+      <button class="btn ghost icon sm" aria-label="미리보기 닫기" onClick=${onClose}><${Icon} name="x" size=${14} /></button></div>
+    <div class="fpreview-b">
+      ${urls.map((u, i) => html`<img key=${i} src=${u} alt=${file.name + ' ' + (i + 1)} />`)}
+      ${file.sheets && file.sheets.length ? html`<${SheetTables} sheets=${file.sheets} />` : file.text ? html`<pre>${file.text}</pre>` : null}
+      ${!urls.length && !file.text ? html`<span class="small faint">보여줄 내용이 없습니다.</span>` : null}
+    </div>
+  </div>`;
 }
 
 function useFileReader() {
   const [files, setFiles] = useState([]);
-  const add = async (list) => {
-    const maxImages = (RT.imageLimits && RT.imageLimits.maxCount) || 0;
+  const add = async (list, onReady) => {
     for (const f of list) {
       const id = L.uid('f');
       setFiles((fs) => fs.concat([{ id: id, name: f.name || '붙여넣은 이미지', status: 'reading' }]));
       try {
-        const r = await AI.extractFile(f, { maxImages: maxImages });
-        let status = r.kind === 'unsupported' ? 'error' : 'ready';
-        if (r.kind === 'images' && !maxImages) { status = 'error'; r.note = '이미지는 AI 이미지 읽기가 가능한 화면에서만 쓸 수 있습니다'; }
-        setFiles((fs) => fs.map((x) => (x.id === id ? Object.assign({}, x, r, { status: status }) : x)));
+        const r = await Files.extractFile(f);
+        const status = r.kind === 'unsupported' ? 'error' : 'ready';
+        const done = Object.assign({ id: id }, r, { status: status });
+        if (status === 'ready' && onReady && onReady(done)) setFiles((fs) => fs.filter((x) => x.id !== id));
+        else setFiles((fs) => fs.map((x) => (x.id === id ? done : x)));
       } catch (e) {
         setFiles((fs) => fs.map((x) => (x.id === id ? Object.assign({}, x, { status: 'error', note: '읽지 못했습니다' }) : x)));
         console.warn(e);
@@ -64,54 +104,29 @@ function useFileReader() {
   return { files: files, add: add, remove: remove, clear: () => setFiles([]) };
 }
 
-function AiOff() {
-  return html`<div class="note info"><${Icon} name="spark" /><div>AI 정리를 쓸 수 없는 상태입니다. 표에 직접 입력해 진행할 수 있어요.</div></div>`;
-}
-
 /* ===================== 1. 고객 요청 ===================== */
 function StepRequest({ p, up, go }) {
   const fr = useFileReader();
-  const [run, setRun] = useState(null);
-  const [err, setErr] = useState('');
-  const [pending, setPending] = useState(null);
+  const [openId, setOpenId] = useState(null);
   const req = p.request || {};
-  const saved = (req.files || []).map((f, i) => ({ id: 'saved' + i, name: f.name, note: f.note, text: f.text, status: 'ready', kind: 'text', saved: true }));
-  const [useSaved, setUseSaved] = useState(true);
-  const allFiles = fr.files.concat(useSaved ? saved : []);
-  const src = AI.collectSources(req.raw, allFiles);
-  const hasInput = !!(src.text || src.images.length);
-  const reading = fr.files.some((f) => f.status === 'reading');
+  const saved = (req.files || []).map((f, i) => ({ id: 'saved' + i, idx: i, name: f.name, note: f.note, text: f.text, sheets: f.sheets, status: 'ready', kind: 'text', saved: true }));
+  const shown = saved.concat(fr.files);
+  const opened = shown.find((f) => f.id === openId) || null;
   const c = p.customer || {};
   const setC = (k, v) => up((x) => { x.customer = x.customer || {}; x.customer[k] = v; });
 
-  async function runAI() {
-    setErr('');
-    const ctl = new AbortController();
-    setRun({ started: Date.now(), ctl: ctl });
-    try {
-      const res = await AI.normalizeRequest(src, ctl.signal);
-      const keep = allFiles.filter((f) => f.status === 'ready' && f.text).map((f) => ({ name: f.name, note: f.note || '', text: String(f.text).slice(0, 30000) }));
-      up((x) => { x.request = Object.assign({}, x.request || {}, { files: keep, parsedAt: Date.now() }); });
-      if (!res.items.length) { setErr('원문에서 품목을 찾지 못했습니다. 내용을 확인하거나 직접 입력해 주세요.'); return; }
-      if ((p.items || []).length) setPending(res); else apply(res, 'replace');
-    } catch (e) {
-      if (!e || e.code !== 'cancelled') setErr(AI.errText(e));
-    } finally { setRun(null); }
-  }
-  function apply(res, mode) {
-    up((x) => {
-      x.customer = x.customer || {};
-      ['company', 'contact', 'phone', 'email'].forEach((k) => { if (!str(x.customer[k]) && res.customer[k]) x.customer[k] = res.customer[k]; });
-      if (!str(x.title) && res.title) x.title = res.title;
-      x.items = mode === 'append' ? (x.items || []).concat(res.items) : res.items;
-      x.conditions = x.conditions || {};
-      ['dueDate', 'deliveryPlace', 'install', 'other'].forEach((k) => { if (!str(x.conditions[k]) && res.conditions[k]) x.conditions[k] = res.conditions[k]; });
-      x.questions = mode === 'append' ? (x.questions || []).concat(res.questions) : res.questions;
-    });
-    setPending(null);
-    toast('요청 품목 ' + res.items.length + '개를 정리했습니다');
-    go(2);
-  }
+  // 글자로 읽힌 파일은 견적 건에 저장해 다음에도 볼 수 있게 한다(이미지는 이번 화면에서만).
+  const keep = (f) => {
+    if (!f.text) return false;
+    up((x) => { x.request = Object.assign({}, x.request || {}); x.request.files = (x.request.files || []).concat([Object.assign({ name: f.name, note: f.note || '', text: String(f.text).slice(0, 30000) }, f.sheets ? { sheets: f.sheets } : {})]); });
+    return true;
+  };
+  const addFiles = (list) => fr.add(list, keep);
+  const removeFile = (f) => {
+    if (openId === f.id) setOpenId(null);
+    if (f.saved) up((x) => { x.request.files.splice(f.idx, 1); });
+    else fr.remove(f);
+  };
 
   return html`<div class="stack s16">
     <div class="grid2" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);align-items:start">
@@ -120,14 +135,15 @@ function StepRequest({ p, up, go }) {
         <div class="panel-b stack">
           <textarea id="req-raw" class="textarea" rows="11" placeholder=${'예) 안녕하세요, AI 학습용 GPU 서버 2대 견적 부탁드립니다.\nGPU는 RTX Pro 6000 4장, 메모리 256GB, SSD 480GB 2개…'} value=${req.raw || ''}
             onInput=${(e) => up((x) => { x.request = Object.assign({}, x.request || {}, { raw: e.target.value }); })}
-            onPaste=${(e) => { const fl = Array.from((e.clipboardData && e.clipboardData.files) || []); if (fl.length) { e.preventDefault(); fr.add(fl); } }}></textarea>
-          <${FileDrop} onFiles=${fr.add} title="요청 파일 추가" sub="엑셀 · PDF · 워드 · 이미지 · .eml (스크린샷은 붙여넣기도 됩니다)" />
-          <${FileChips} files=${fr.files} onRemove=${fr.remove} />
-          ${saved.length ? html`<div class="row small muted"><label class="check"><input type="checkbox" checked=${useSaved} onChange=${(e) => setUseSaved(e.target.checked)} />이전에 읽은 파일 ${saved.length}개 함께 사용</label><span class="faint">${saved.map((f) => f.name).join(', ')}</span></div>` : null}
+            onPaste=${(e) => { const fl = Array.from((e.clipboardData && e.clipboardData.files) || []); if (fl.length) { e.preventDefault(); addFiles(fl); } }}></textarea>
+          <${FileDrop} onFiles=${addFiles} title="요청 파일 추가" sub="엑셀 · PDF · 워드 · 이미지 · .eml (스크린샷은 붙여넣기도 됩니다)" />
+          <${FileChips} files=${shown} onRemove=${removeFile} openId=${openId} onOpen=${setOpenId} />
+          ${shown.some((f) => f.status === 'ready') && !opened ? html`<div class="xs faint">파일 이름을 누르면 내용을 볼 수 있습니다. 이미지는 이 화면에서만 보이고 저장되지 않습니다.</div>` : null}
+          <${FilePreview} file=${opened} onClose=${() => setOpenId(null)} />
         </div>
       </section>
       <section class="panel">
-        <div class="panel-h"><h3>고객 정보</h3><span class="sub">AI 정리 시 빈 칸만 채웁니다</span></div>
+        <div class="panel-h"><h3>고객 정보</h3></div>
         <div class="panel-b stack">
           <${Field} label="건명"><input id="p-title" class="input" value=${p.title || ''} placeholder="예) AI GPU서버 도입" onInput=${(e) => up((x) => { x.title = e.target.value; })} /><//>
           <${Field} label="고객사"><input id="c-company" class="input" value=${c.company || ''} placeholder="예) 홍길동손해보험" onInput=${(e) => setC('company', e.target.value)} /><//>
@@ -140,18 +156,7 @@ function StepRequest({ p, up, go }) {
       </section>
     </div>
 
-    ${!RT.sample ? html`<${AiOff} />` : null}
-    ${run ? html`<${AiRunning} label="고객 요청을 품목표로 정리하는 중" started=${run.started} onStop=${() => run.ctl.abort()} />` : null}
-    ${err ? html`<div class="note bad">${err}</div>` : null}
-    ${pending ? html`<div class="note warn" style="align-items:center;flex-wrap:wrap">
-      <div style="flex:1;min-width:220px">AI가 품목 ${pending.items.length}개를 찾았습니다. 이미 정리된 품목 ${(p.items || []).length}개가 있습니다.</div>
-      <button class="btn sm primary" onClick=${() => apply(pending, 'replace')}>새 결과로 바꾸기</button>
-      <button class="btn sm" onClick=${() => apply(pending, 'append')}>뒤에 추가</button>
-      <button class="btn sm ghost" onClick=${() => setPending(null)}>취소</button>
-    </div>` : null}
-
-    <${StepNav} next="AI로 요청 정리" nextLabel=${html`<${Icon} name="spark" />AI로 요청 정리`} nextDisabled=${!RT.sample || !hasInput || !!run || reading} onNext=${runAI}
-      extra=${html`<button class="btn" onClick=${() => go(2)}>${(p.items || []).length ? '정리된 품목 보기' : '직접 입력하기'}</button>`} />
+    <${StepNav} next="요청 정리" nextLabel=${(p.items || []).length ? '정리된 품목 보기' : '품목표 입력하기'} onNext=${() => go(2)} />
   </div>`;
 }
 
@@ -179,11 +184,28 @@ function ItemsTable({ p, up }) {
             <${ConfirmBtn} small icon="trash" label="품목 삭제" onConfirm=${() => up((x) => { x.items.splice(i, 1); })} />
           </div></td>
         </tr>`)}
-        ${!items.length ? html`<tr><td colspan="8"><div class="empty" style="padding:24px"><b>아직 품목이 없습니다</b><span class="small">1단계에서 AI로 정리하거나 아래 버튼으로 직접 추가하세요.</span></div></td></tr>` : null}
+        ${!items.length ? html`<tr><td colspan="8"><div class="empty" style="padding:24px"><b>아직 품목이 없습니다</b><span class="small">아래 [품목 추가] 버튼으로 고객 요청 품목을 한 줄씩 입력하세요.</span></div></td></tr>` : null}
       </tbody>
     </table></div>
     <div><button class="btn sm" onClick=${add}><${Icon} name="plus" size=${14} />품목 추가</button></div>
   </div>`;
+}
+
+/* 품목표를 입력하면서 옆에 띄워 보는 1단계 원문 · 첨부 */
+function RequestSource({ p }) {
+  const req = p.request || {};
+  const files = (req.files || []).map((f, i) => ({ id: 'saved' + i, name: f.name, note: f.note, text: f.text, sheets: f.sheets, status: 'ready', kind: 'text' }));
+  const [openId, setOpenId] = useState(null);
+  if (!str(req.raw) && !files.length) return null;
+  const opened = files.find((f) => f.id === openId) || null;
+  return html`<details class="panel">
+    <summary class="panel-h" style="cursor:pointer"><h3>고객 요청 원문 보기</h3><span class="sub">${[str(req.raw) ? '붙여넣은 내용' : '', files.length ? '첨부 ' + files.length + '개' : ''].filter(Boolean).join(' · ')}</span></summary>
+    <div class="panel-b stack s8">
+      ${str(req.raw) ? html`<div class="fpreview"><div class="fpreview-b"><pre>${req.raw}</pre></div></div>` : null}
+      <${FileChips} files=${files} openId=${openId} onOpen=${setOpenId} />
+      <${FilePreview} file=${opened} onClose=${() => setOpenId(null)} />
+    </div>
+  </details>`;
 }
 
 function StepItems({ p, up, settings, go }) {
@@ -204,6 +226,7 @@ function StepItems({ p, up, settings, go }) {
     copyText(lines.join('\n'), '고객 확인 문구');
   }
   return html`<div class="stack s16">
+    <${RequestSource} p=${p} />
     <section class="stack s8">
       <div class="section-title"><h3>요청 품목</h3><span class="hint">매입처에 그대로 전달되는 표입니다. 사양은 구성 요소별로 한 줄씩 적으면 읽기 쉽습니다.</span></div>
       <${ItemsTable} p=${p} up=${up} />
@@ -226,7 +249,7 @@ function StepItems({ p, up, settings, go }) {
             <${AutoText} value=${q.text} className=${q.done ? 'faint' : ''} onInput=${(v) => up((x) => { x.questions[i].text = v; })} />
             <button class="btn ghost icon sm" aria-label="삭제" style="margin-top:4px" onClick=${() => up((x) => { x.questions.splice(i, 1); })}><${Icon} name="x" size=${14} /></button>
           </div>`)}
-          ${!qs.length ? html`<p class="small muted">AI가 정리할 때 수량 누락이나 모호한 사양이 있으면 여기에 질문으로 남깁니다.</p>` : null}
+          ${!qs.length ? html`<p class="small muted">수량 누락이나 모호한 사양처럼 고객에게 물어볼 점을 적어 두세요.</p>` : null}
           <div class="row">
             <button class="btn sm" onClick=${() => up((x) => { x.questions = (x.questions || []).concat([{ id: L.uid('q'), text: '', done: false }]); })}><${Icon} name="plus" size=${14} />확인 사항 추가</button>
             ${open.length ? html`<button class="btn sm" onClick=${copyAsk}><${Icon} name="copy" size=${14} />고객 확인 문구 복사</button>` : null}
@@ -401,6 +424,12 @@ function QuoteCard({ p, qt, qi, up, vendors, saveVendor, open, onToggle }) {
         ${qt.vendorName ? html`<button class="btn sm" onClick=${async () => { const id = await saveVendor({ name: qt.vendorName, contact: (qt.vendorContact && qt.vendorContact.contact) || '', email: (qt.vendorContact && qt.vendorContact.email) || '', phone: (qt.vendorContact && qt.vendorContact.phone) || '' }); if (id) setQ((t) => { t.vendorId = id; }); }}>'${qt.vendorName}' 새 매입처로 저장</button>` : null}
       </div>` : null}
       ${open ? html`<div class="stack s16">
+        ${qt.source && qt.source.text ? html`<details class="fpreview" open>
+          <summary class="fpreview-h" style="cursor:pointer"><${Icon} name="file" size=${14} /><b class="small" style="flex:1">견적 원본</b><span class="xs faint">${(qt.source.files || []).join(', ')}</span></summary>
+          <div class="fpreview-b" style="max-height:340px">${qt.source.sheets && qt.source.sheets.length
+            ? html`${qt.source.rest ? html`<pre style="margin-bottom:12px">${qt.source.rest}</pre>` : null}<${SheetTables} sheets=${qt.source.sheets} />`
+            : html`<pre>${qt.source.text}</pre>`}</div>
+        </details>` : null}
         <div class="tbl-wrap"><table class="tbl" style="min-width:1040px">
           <thead><tr><th style="width:17%">요청 품목</th><th>모델 · 품명</th><th class="num" style="width:70px">수량</th><th style="width:60px">단위</th><th class="num" style="width:130px">제안 단가</th><th class="num" style="width:140px">금액</th><th style="width:118px">대응</th><th style="width:70px"></th></tr></thead>
           <tbody>${qt.items.map((it, k) => {
@@ -508,66 +537,53 @@ function StepQuotes({ p, up, vendors, go, saveVendor }) {
   const fr = useFileReader();
   const [raw, setRaw] = useState('');
   const [vsel, setVsel] = useState('');
-  const [run, setRun] = useState(null);
-  const [err, setErr] = useState('');
   const [openQ, setOpenQ] = useState(null);
+  const [openF, setOpenF] = useState(null);
   const quotes = p.quotes || [];
   const requested = ((p.rfq && p.rfq.targets) || []).map((t) => t.vendorId);
   const vlist = vendors.slice().sort((a, b) => (requested.includes(b.id) ? 1 : 0) - (requested.includes(a.id) ? 1 : 0));
-  const src = AI.collectSources(raw, fr.files);
-  const hasInput = !!(src.text || src.images.length);
   const reading = fr.files.some((f) => f.status === 'reading');
+  const openedFile = fr.files.find((f) => f.id === openF) || null;
 
-  async function runAI() {
-    setErr('');
-    const ctl = new AbortController();
-    setRun({ started: Date.now(), ctl: ctl });
-    try {
-      const qt = await AI.parseVendorQuote(p, src, ctl.signal);
-      let v = vsel ? vendors.find((x) => x.id === vsel) : null;
-      if (!v && qt.vendorName) v = vendors.find((x) => L.normName(x.name) === L.normName(qt.vendorName) || (L.normName(x.name) && L.normName(qt.vendorName).includes(L.normName(x.name))));
-      if (v) { qt.vendorId = v.id; qt.vendorName = v.name; }
-      qt.source = { files: fr.files.filter((f) => f.status === 'ready').map((f) => f.name), text: src.text.slice(0, 20000) };
-      if (!qt.items.length) { setErr('견적서에서 품목을 찾지 못했습니다. 원문을 확인하거나 [직접 입력]을 써 주세요.'); return; }
-      up((x) => { x.quotes = (x.quotes || []).concat([qt]); });
-      setRaw(''); fr.clear(); setVsel(''); setOpenQ(qt.id);
-      toast((qt.vendorName || '매입') + ' 견적을 읽고 검토했습니다');
-    } catch (e) {
-      if (!e || e.code !== 'cancelled') setErr(AI.errText(e));
-    } finally { setRun(null); }
-  }
-  function addManual() {
+  // 요청 품목마다 한 줄씩 미리 만든 빈 매입 견적. 붙여넣은 원문·첨부 글자는 원본으로 함께 보관한다.
+  function addQuote() {
     const v = vsel ? vendors.find((x) => x.id === vsel) : null;
+    const text = Files.collectText(raw, fr.files);
     const qt = { id: L.uid('qt'), vendorId: v ? v.id : null, vendorName: v ? v.name : '', vendorContact: {}, receivedAt: L.today(), quoteNo: '', quoteDate: L.today(), vat: 'excluded',
       items: (p.items || []).map((it) => ({ id: L.uid('qi'), reqItemId: it.id, model: it.model || '', name: it.name, summary: '', qty: it.qty, unit: it.unit, listPrice: null, unitPrice: null, amount: null, parts: [], specs: [], note: '', match: 'exact', matchNote: '' })),
       totals: { supply: null, vat: null, total: null }, terms: { validUntil: '', warranty: '', delivery: '', payment: '', shipping: '', note: '' }, deviations: [] };
+    if (text) {
+      const ready = fr.files.filter((f) => f.status === 'ready');
+      const sheets = [];
+      ready.forEach((f) => (f.sheets || []).forEach((sh) => sheets.push({ name: f.name + (f.sheets.length > 1 ? ' · ' + sh.name : ''), rows: sh.rows })));
+      qt.source = { files: ready.map((f) => f.name), text: text.slice(0, 20000) };
+      // 엑셀은 표로 보여 주고, 붙여넣은 본문·PDF·메일 등 나머지는 글자로 함께 보관
+      if (sheets.length) { qt.source.sheets = sheets; qt.source.rest = Files.collectText(raw, ready.filter((f) => !f.sheets)).slice(0, 20000); }
+    }
     up((x) => { x.quotes = (x.quotes || []).concat([qt]); });
-    setOpenQ(qt.id);
+    setRaw(''); fr.clear(); setVsel(''); setOpenF(null); setOpenQ(qt.id);
   }
 
   return html`<div class="stack s16">
     <section class="panel">
-      <div class="panel-h"><h3>매입 견적 추가</h3><span class="sub">받은 견적서를 그대로 넣으면 요청 품목과 맞춰 보고 검토합니다</span></div>
+      <div class="panel-h"><h3>매입 견적 추가</h3><span class="sub">받은 견적서를 열어 두고 단가·금액을 표에 옮겨 적으면 요청 품목과 맞춰 검토합니다</span></div>
       <div class="panel-b stack">
         <div class="grid2" style="grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);align-items:start">
           <div class="stack s8">
             <${Field} label="매입처"><select id="q-vendor" class="select" value=${vsel} onChange=${(e) => setVsel(e.target.value)}>
-              <option value="">견적서에서 자동 인식</option>
+              <option value="">나중에 선택</option>
               ${vlist.map((v) => html`<option key=${v.id} value=${v.id}>${v.name}${requested.includes(v.id) ? ' · 요청함' : ''}</option>`)}
             </select><//>
-            <${FileDrop} onFiles=${fr.add} title="견적서 파일 추가" sub="엑셀 · PDF · 이미지 · .eml" />
-            <${FileChips} files=${fr.files} onRemove=${fr.remove} />
+            <${FileDrop} onFiles=${fr.add} title="견적서 파일 열기" sub="엑셀 · PDF · 이미지 · .eml — 내용을 바로 보여 줍니다" />
+            <${FileChips} files=${fr.files} onRemove=${(f) => { if (openF === f.id) setOpenF(null); fr.remove(f); }} openId=${openF} onOpen=${setOpenF} />
           </div>
-          <${Field} label="또는 메일 본문 붙여넣기"><textarea id="q-raw" class="textarea" rows="7" value=${raw} placeholder="견적 메일 본문이나 엑셀에서 복사한 표를 붙여넣으세요" onInput=${(e) => setRaw(e.target.value)}
+          <${Field} label="메일 본문 붙여넣기 (선택)"><textarea id="q-raw" class="textarea" rows="7" value=${raw} placeholder="견적 메일 본문을 붙여넣어 두면 견적과 함께 보관됩니다" onInput=${(e) => setRaw(e.target.value)}
             onPaste=${(e) => { const fl = Array.from((e.clipboardData && e.clipboardData.files) || []); if (fl.length) { e.preventDefault(); fr.add(fl); } }}></textarea><//>
         </div>
-        ${!RT.sample ? html`<${AiOff} />` : null}
-        ${run ? html`<${AiRunning} label="매입 견적을 읽고 요청 품목과 맞춰 보는 중" started=${run.started} onStop=${() => run.ctl.abort()} />` : null}
-        ${err ? html`<div class="note bad">${err}</div>` : null}
+        <${FilePreview} file=${openedFile} onClose=${() => setOpenF(null)} />
         <div class="row">
-          <button class="btn primary" disabled=${!RT.sample || !hasInput || !!run || reading} onClick=${runAI}><${Icon} name="spark" />AI로 읽고 검토</button>
-          <button class="btn" onClick=${addManual}>직접 입력</button>
-          ${!(p.items || []).length ? html`<span class="small" style="color:var(--warn)">요청 품목이 없으면 일치 여부를 검토할 수 없습니다(2단계).</span>` : null}
+          <button class="btn primary" disabled=${reading} onClick=${addQuote}><${Icon} name="plus" />매입 견적 추가</button>
+          ${!(p.items || []).length ? html`<span class="small" style="color:var(--warn)">요청 품목이 없으면 일치 여부를 검토할 수 없습니다(2단계).</span>` : html`<span class="small muted">요청 품목 ${(p.items || []).length}개가 미리 채워진 표가 만들어집니다.</span>`}
         </div>
       </div>
     </section>

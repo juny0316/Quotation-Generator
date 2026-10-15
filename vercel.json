@@ -2,7 +2,6 @@
   "buildCommand": "node build.js",
   "outputDirectory": "public",
   "functions": {
-    "api/ai.js": { "maxDuration": 300 },
     "api/docs.js": { "maxDuration": 30 },
     "api/login.js": { "maxDuration": 10 }
   },

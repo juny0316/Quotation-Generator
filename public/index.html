@@ -243,9 +243,17 @@ a { color: var(--brand); }
 .fchip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
 .fchip button { border: 0; background: transparent; cursor: pointer; color: var(--fg-3); width: 20px; height: 20px; border-radius: 4px; }
 .fchip button:hover { background: var(--surface-3); color: var(--fg); }
+.fchip .nm.link { cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 2px; }
+.fchip.on { border-color: var(--brand); background: var(--brand-soft); }
 
-/* AI 진행 */
-.ai-run { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-2); background: var(--brand-soft); color: var(--brand); }
+/* 첨부 미리보기 */
+.fpreview { border: 1px solid var(--line); border-radius: var(--r-2); background: var(--surface-2, var(--surface)); }
+.fpreview-h { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.fpreview-b { max-height: 420px; overflow: auto; padding: 10px 12px; }
+.fpreview pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.55 ui-monospace, Consolas, monospace; }
+.fpreview .tbl.sheet { width: auto; min-width: 100%; font-size: 12px; }
+.fpreview .tbl.sheet td { padding: 4px 8px; white-space: pre-wrap; vertical-align: top; max-width: 360px; border: 1px solid var(--line); }
+.fpreview img { display: block; max-width: 100%; height: auto; margin: 0 auto 10px; border: 1px solid var(--line); }
 .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -1458,7 +1466,7 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const LOGO_DATA = 'data:image/png;base64,' + LOGO_B64;
 
 /* ---------- 런타임(Claude 기능) ---------- */
-const RT = { ready: false, mode: 'init', db: null, sample: null, downloads: null, user: null, uid: null, imageLimits: null, canWrite: null };
+const RT = { ready: false, mode: 'init', db: null, downloads: null, user: null, uid: null, canWrite: null };
 
 /* ---------- 외부 라이브러리(필요할 때만 로드) ---------- */
 const LIBS = {
@@ -1844,18 +1852,6 @@ function FileDrop({ onFiles, accept, title, sub, multiple }) {
   </div>`;
 }
 
-/* AI 진행 표시 */
-function AiRunning({ label, started, onStop }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
-  const sec = Math.max(0, Math.round((now - started) / 1000));
-  return html`<div class="ai-run" role="status">
-    <span class="spin"></span>
-    <div style="flex:1;min-width:0"><b>${label}</b><div class="small" style="opacity:.85">${sec < 4 ? '시작하는 중…' : sec + '초 · 보통 20~60초 걸립니다'}</div></div>
-    ${onStop ? html`<button class="btn sm" onClick=${onStop}><${Icon} name="stop" size=${14} />중지</button>` : null}
-  </div>`;
-}
-
 function Modal({ title, onClose, children, footer }) {
   useEffect(() => {
     const k = (e) => { if (e.key === 'Escape') onClose(); };
@@ -1871,37 +1867,12 @@ function Modal({ title, onClose, children, footer }) {
   </div>`;
 }
 
-/* ---- ai.js ---- */
-/* ===== 파일 읽기 · AI 정리 ===== */
-const AI = {};
+/* ---- files.js ---- */
+/* ===== 첨부파일 읽기 (미리보기용) ===== */
+const Files = {};
 
-AI.MAX_TEXT = 120000;
-
-AI.errText = function (e) {
-  const code = e && e.code;
-  const M = {
-    not_granted: 'AI 사용이 허용되지 않았습니다.',
-    not_configured: 'AI 키가 아직 설정되지 않았습니다. Vercel 환경변수 ANTHROPIC_API_KEY를 넣어 주세요.',
-    unauthorized: '로그인이 필요합니다. 새로 고친 뒤 비밀번호를 입력해 주세요.',
-    sampling_disabled: '이 계정에서는 AI 기능을 쓸 수 없습니다. 표에 직접 입력해 주세요.',
-    not_declared: 'AI 기능이 꺼져 있습니다.',
-    capability_disabled: '이 화면에서는 AI 기능을 쓸 수 없습니다.',
-    capability_removed: '앱을 새로 고친 뒤 다시 시도해 주세요.',
-    rate_limited: '요청이 몰려 있습니다. 잠시 후 다시 눌러 주세요.',
-    prompt_too_large: '내용이 너무 깁니다. 필요한 부분만 남기고 다시 시도해 주세요.',
-    invalid_json: 'AI 응답을 표로 바꾸지 못했습니다. 한 번 더 눌러 주세요.',
-    image_rejected: '이미지를 읽을 수 없습니다. 다른 파일(또는 텍스트)로 시도해 주세요.',
-    images_unavailable: '이 화면에서는 이미지를 보낼 수 없습니다. 내용을 텍스트로 붙여넣어 주세요.',
-    refused: 'AI가 이 내용을 처리하지 않았습니다. 원문을 확인해 주세요.',
-    session_expired: '로그인이 만료되었습니다. 새로 고친 뒤 비밀번호를 다시 입력해 주세요.',
-    empty_completion: 'AI가 결과를 만들지 못했습니다. 내용을 줄여 다시 시도해 주세요.',
-    cancelled: '중지했습니다.',
-    upstream_error: '일시적인 오류입니다. 다시 눌러 주세요.'
-  };
-  if (code && M[code]) return M[code];
-  if (e && e.message && !code) return e.message;
-  return M.upstream_error;
-};
+Files.MAX_TEXT = 120000;
+Files.MAX_IMAGES = 6;
 
 /* ---------- 파일 → 텍스트/이미지 ---------- */
 function decodeQP(s) { return s.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/gi, (m, h) => String.fromCharCode(parseInt(h, 16))); }
@@ -1955,15 +1926,25 @@ function htmlToText(h0) {
   } catch (e) { return h0.replace(/<[^>]+>/g, ' '); }
 }
 
-AI.extractFile = async function (file, opts) {
+Files.extractFile = async function (file, opts) {
   const name = file.name || '파일';
   const ext = (name.split('.').pop() || '').toLowerCase();
-  const maxImages = (opts && opts.maxImages) || 0;
+  const maxImages = (opts && opts.maxImages) || Files.MAX_IMAGES;
   const out = { name: name, kind: 'text', text: '', images: [], note: '' };
   if (['xlsx', 'xlsm', 'xls', 'csv', 'ods'].includes(ext)) {
     await loadLib('xlsx');
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    // 미리보기 표: 시트별 행(빈 행 제외, 최대 300행 · 30열)
+    out.sheets = wb.SheetNames.map((sn) => {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, blankrows: false, raw: false, defval: '', dateNF: 'yyyy-mm-dd' })
+        .map((r) => r.slice(0, 30).map((v) => String(v).trim()))
+        .filter((r) => r.some(Boolean));
+      const width = rows.reduce((m, r) => { let k = r.length; while (k && !r[k - 1]) k--; return Math.max(m, k); }, 0);
+      let lead = width;
+      rows.forEach((r) => { const k = r.findIndex(Boolean); if (k >= 0 && k < lead) lead = k; });
+      return { name: sn, rows: rows.slice(0, 300).map((r) => r.slice(lead, width)) };
+    });
     out.text = wb.SheetNames.map((sn) => {
       const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false, dateNF: 'yyyy-mm-dd' });
       const lines = csv.split('\n').map((l) => l.replace(/,+$/, '')).filter((l) => l.replace(/[,\s"]/g, ''));
@@ -2027,191 +2008,14 @@ AI.extractFile = async function (file, opts) {
   return out;
 };
 
-AI.collectSources = function (raw, files) {
+/* 붙여넣은 원문 + 읽은 첨부 텍스트를 한 덩어리로 (매입 견적 원본 보관용) */
+Files.collectText = function (raw, files) {
   const texts = [];
   if (str(raw)) texts.push('[붙여넣은 내용]\n' + str(raw));
   (files || []).forEach((f) => { if (f.status === 'ready' && f.text) texts.push('[첨부: ' + f.name + ']\n' + f.text); });
   let text = texts.join('\n\n');
-  if (text.length > AI.MAX_TEXT) text = text.slice(0, AI.MAX_TEXT) + '\n…(이하 생략)';
-  const images = [];
-  (files || []).forEach((f) => { if (f.status === 'ready') (f.images || []).forEach((b) => images.push(b)); });
-  return { text: text, images: images };
-};
-
-/* ---------- 프롬프트 ---------- */
-AI.requestPrompt = function (text, imageCount, today) {
-  return [
-    '당신은 IT 장비·솔루션 유통사(유니포인트)의 견적 담당자를 돕습니다.',
-    '아래 [고객 요청 원문]은 메일·메신저·엑셀·PDF 등에서 가져온 것이라 서식이 제각각입니다. 매입처(공급사)에 견적을 요청할 수 있도록 표준 품목표로 정리해 주세요.',
-    imageCount ? '함께 보낸 이미지 ' + imageCount + '장도 고객 요청 원문입니다.' : '',
-    '',
-    '규칙',
-    '1. 원문에 있는 내용만 씁니다. 추측해서 채우지 말고 모르는 값은 "" 또는 null로 둡니다.',
-    '2. 품목은 한 줄에 하나. 여러 품목이 한 문장에 섞여 있으면 나눕니다. 단, 서버·PC·스토리지처럼 한 장비를 이루는 구성 요소(CPU, 메모리, 디스크, GPU, NIC, 전원 등)는 따로 나누지 말고 그 장비의 spec에 넣습니다.',
-    '3. name: 짧은 품목명 (예: "GPU 서버", "노트북", "27인치 모니터", "L2 스위치").',
-    '4. spec: 요구 사양. 구성 요소별로 한 줄씩 "항목: 내용" 형식 (예: "GPU: NVIDIA RTX Pro 6000 × 4"). 원문의 수치·모델명은 그대로 살립니다. 여러 줄은 \\n으로 구분합니다.',
-    '5. maker / model: 원문에 제조사·모델명이 명시된 경우만.',
-    '6. qty: 숫자(원문에 없으면 null). unit: 대, 개, EA, 식, 세트, 본, 박스, 롤, 년, copy 등 원문 단위(없으면 "EA").',
-    '7. note: 품목별 특이사항(동등품 허용 여부, 무상유지보수 기간, 색상, 분할 납품 등).',
-    '8. conditions: dueDate(납기 — 날짜가 분명하면 YYYY-MM-DD, 아니면 원문 그대로), deliveryPlace(납품 장소), install(설치·구성·이전 등 작업 요구), other(결제·입찰·제출 서류·예산 등 기타).',
-    '9. questions: 매입처에 요청하기 전에 고객에게 확인할 점(수량 누락, "고사양"처럼 모호한 사양, 동등품 허용 여부, 납기 불명 등)을 구체적인 질문 문장으로. 없으면 [].',
-    '10. customer: 원문에서 드러나는 고객사·담당자·연락처·이메일. title: 이 견적 건의 짧은 이름(예: "AI GPU서버 도입").',
-    '',
-    '오늘 날짜: ' + today,
-    '',
-    '출력: 아래 형식의 JSON 하나만 출력합니다.',
-    '{"title":"","customer":{"company":"","contact":"","phone":"","email":""},"items":[{"name":"","spec":"","maker":"","model":"","qty":null,"unit":"EA","note":""}],"conditions":{"dueDate":"","deliveryPlace":"","install":"","other":""},"questions":[]}',
-    '',
-    '[고객 요청 원문]',
-    text || '(텍스트 없음 — 이미지 참고)'
-  ].filter((x) => x !== null).join('\n');
-};
-
-AI.vendorPrompt = function (project, text, imageCount, today) {
-  const items = (project.items || []).map((it, i) => [i + 1, it.name || '', String(it.spec || '').replace(/\n/g, ' / '), [it.maker, it.model].filter(Boolean).join(' '), it.qty ?? '', it.unit || '', it.note || ''].join(' | '));
-  return [
-    '당신은 IT 장비 유통사(유니포인트)의 구매 담당자를 돕습니다.',
-    '[매입 견적 원문]은 매입처가 보낸 견적서(엑셀·PDF·메일 본문 등)이고 서식이 매번 다릅니다. 견적 내용을 구조화하고, [요청 품목]과 하나씩 대응시킨 뒤, 요청과 달라진 점을 정리해 주세요.',
-    imageCount ? '함께 보낸 이미지 ' + imageCount + '장도 매입 견적 원문입니다.' : '',
-    '',
-    '규칙',
-    '1. 견적서에 적힌 값만 씁니다. 숫자를 새로 계산하지 마세요(검산은 앱이 합니다). 쉼표·통화기호는 빼고 숫자로 적습니다.',
-    '2. items: 견적서의 판매 단위 행마다 하나. 소계·합계·부가세 행은 품목이 아닙니다. 배송비·설치비처럼 금액이 붙은 별도 비용 행은 품목으로 넣습니다.',
-    '   - 서버처럼 하나의 모델 아래 파트 번호 목록이 붙은 구성은 하나의 item으로 묶고, 파트 목록은 parts에 넣습니다.',
-    '   - model: 제품 모델명(예: "ThinkSystem SR650 V4"). name: 견적서의 품목명·구성명. summary: 구성 요약 한 줄.',
-    '   - qty, unit, listPrice(소비자가·정가, 없으면 null), unitPrice(제안 단가·공급 단가), amount(그 행의 금액 합계).',
-    '   - parts: [{"partNo":"","desc":"","qty":1}] — 견적서의 파트 목록 그대로(최대 40개, 없으면 []).',
-    '   - specs: 고객용 견적서에 넣을 주요 사양 요약. 구성 요소별 한 줄 {"cat","detail","spec"}.',
-    '     cat: CPU, MEMORY, DISK, GPU, NIC, RAID, POWER, OS, WARRANTY 같은 대문자 분류(같은 분류가 이어지면 두 번째 줄부터 "").',
-    '     detail: 제조사·모델·용량을 짧게. spec: 총량 또는 수량(예: "32Core", "256GB", "2EA").',
-    '     예) [{"cat":"CPU","detail":"Intel Xeon 6517P 16C 3.2GHz * 2 CPU","spec":"32Core"},{"cat":"MEMORY","detail":"DDR5 32GB * 8EA","spec":"256GB"},{"cat":"DISK","detail":"SATA SSD 480GB","spec":"2EA"},{"cat":"","detail":"SAS HDD 2.4TB","spec":"2EA"},{"cat":"NIC","detail":"Broadcom 5719 1GbE 4-Port","spec":"2EA"},{"cat":"POWER","detail":"2000W Titanium Hot-Swap","spec":"2EA"},{"cat":"GPU","detail":"NVIDIA RTX 6000 Ada 48GB","spec":"2EA"}]',
-    '     구성 요소가 없는 단순 품목은 [].',
-    '   - reqNo: 대응하는 [요청 품목] 번호. 대응하는 것이 없으면 null.',
-    '   - match: "exact"(요청과 같은 제품·사양) | "alternative"(다른 모델·동등품 제안) | "partial"(일부 사양·수량이 다름) | "extra"(요청에 없는 추가 항목).',
-    '   - matchNote: match가 exact가 아니면 무엇이 다른지 한 문장. note: 견적서에 적힌 그 품목의 비고.',
-    '3. vat: 단가·금액이 부가세 포함이면 "included", 별도면 "excluded", 판단할 수 없으면 "unknown". ("VAT 별도", "부가세 포함" 같은 문구와 합계 구조로 판단)',
-    '4. totals: 견적서에 적힌 공급가액 합계(supply), 부가세(vat), 총액(total). 없으면 null.',
-    '5. terms: validUntil(유효기간 — 날짜면 YYYY-MM-DD, "견적일로부터 1주"처럼 기간이면 원문 그대로), warranty(무상 유지보수·보증), delivery(납기), payment(결제 조건), shipping(배송·설치비 포함 여부), note(기타 특이사항).',
-    '6. deviations: 요청 사양과 달라진 점을 고객 견적서 주석에 쓸 수 있게 정리. [{"reqNo":1,"title":"","reason":""}]',
-    '   title 예: "GPU 모델 변경 (RTX Pro 6000 → RTX 6000 Ada)", "GPU 장착 수량 조정 (4ea → 2ea)".',
-    '   reason: 견적서·메일에 사유가 적혀 있으면 요약해서, 없으면 "" (지어내지 마세요).',
-    '7. vendor: 견적서를 보낸 공급사(상호, 담당자, 전화, 이메일). "OO 귀중"처럼 수신처로 적힌 회사는 공급사가 아닙니다.',
-    '8. quoteNo, quoteDate(YYYY-MM-DD): 견적서 번호와 견적일자.',
-    '',
-    '오늘 날짜: ' + today,
-    '',
-    '출력: 아래 형식의 JSON 하나만 출력합니다.',
-    '{"vendor":{"name":"","contact":"","phone":"","email":""},"quoteNo":"","quoteDate":"","vat":"excluded","items":[{"reqNo":1,"model":"","name":"","summary":"","qty":1,"unit":"","listPrice":null,"unitPrice":0,"amount":0,"parts":[],"specs":[],"note":"","match":"exact","matchNote":""}],"totals":{"supply":null,"vat":null,"total":null},"terms":{"validUntil":"","warranty":"","delivery":"","payment":"","shipping":"","note":""},"deviations":[]}',
-    '',
-    '[요청 품목]',
-    'No | 품목 | 요구 사양 | 제조사/모델 | 수량 | 단위 | 비고',
-    items.length ? items.join('\n') : '(요청 품목 없음 — 견적 내용만 구조화)',
-    '',
-    '[매입 견적 원문]',
-    text || '(텍스트 없음 — 이미지 참고)'
-  ].join('\n');
-};
-
-/* ---------- AI 호출 ---------- */
-AI.call = async function (prompt, images, signal) {
-  const opts = { signal: signal, modelTier: 'default' };
-  if (images && images.length) {
-    const max = (RT.imageLimits && RT.imageLimits.maxCount) || 0;
-    if (!max) { const e = { code: 'images_unavailable' }; throw e; }
-    opts.images = images.slice(0, max);
-  }
-  return RT.sample.json(prompt, opts);
-};
-
-/* 이미지 → JPEG base64 (긴 변 1568px 이하) */
-async function blobToJpegB64(blob) {
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = await new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = reject; im.src = url; });
-    const s = Math.min(1, 1568 / Math.max(img.naturalWidth, img.naturalHeight));
-    const cv = document.createElement('canvas');
-    cv.width = Math.max(1, Math.round(img.naturalWidth * s)); cv.height = Math.max(1, Math.round(img.naturalHeight * s));
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.drawImage(img, 0, 0, cv.width, cv.height);
-    return cv.toDataURL('image/jpeg', 0.88).split(',')[1];
-  } finally { URL.revokeObjectURL(url); }
-}
-
-/* 서버(/api/ai) 방식의 AI 호출 — Claude 앱 밖에서 쓰는 기본 경로 */
-AI.serverSample = {
-  async json(prompt, opts) {
-    opts = opts || {};
-    const images = [];
-    for (const b of (opts.images || [])) images.push({ media_type: 'image/jpeg', data: await blobToJpegB64(b) });
-    let r;
-    try {
-      r = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ prompt: prompt, images: images }), signal: opts.signal });
-    } catch (e) {
-      if (e && e.name === 'AbortError') throw { code: 'cancelled' };
-      throw { code: 'upstream_error', message: '서버에 연결하지 못했습니다' };
-    }
-    const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { if (RT.onUnauthorized) RT.onUnauthorized(); throw { code: 'session_expired' }; }
-    if (!r.ok) throw { code: j.code || 'upstream_error', message: j.message, text: j.text };
-    return j.json;
-  },
-  async limits() { return { maxPromptBytes: 400000, images: { maxCount: 6, maxInputBytes: 20000000, mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] } }; }
-};
-
-AI.normalizeRequest = async function (src, signal) {
-  const res = await AI.call(AI.requestPrompt(src.text, src.images.length, L.today()), src.images, signal);
-  if (!res || typeof res !== 'object') throw { code: 'invalid_json' };
-  return {
-    title: str(res.title),
-    customer: { company: str(res.customer && res.customer.company), contact: str(res.customer && res.customer.contact), phone: str(res.customer && res.customer.phone), email: str(res.customer && res.customer.email) },
-    items: arr(res.items).map((x) => ({ id: L.uid('r'), name: str(x.name), spec: str(x.spec).replace(/\\n/g, '\n'), maker: str(x.maker), model: str(x.model), qty: L.num(x.qty), unit: str(x.unit) || 'EA', note: str(x.note) })).filter((x) => x.name || x.spec),
-    conditions: { dueDate: str(res.conditions && res.conditions.dueDate), deliveryPlace: str(res.conditions && res.conditions.deliveryPlace), install: str(res.conditions && res.conditions.install), other: str(res.conditions && res.conditions.other) },
-    questions: arr(res.questions).map(str).filter(Boolean).map((t) => ({ id: L.uid('q'), text: t, done: false }))
-  };
-};
-
-AI.quoteFromResult = function (res, project) {
-  const items = project.items || [];
-  const reqId = (no) => { const k = L.num(no); return k && items[k - 1] ? items[k - 1].id : null; };
-  const M = ['exact', 'alternative', 'partial', 'extra'];
-  const qItems = arr(res.items).map((x) => {
-    const rid = reqId(x.reqNo);
-    return {
-      id: L.uid('qi'),
-      reqItemId: rid,
-      model: str(x.model), name: str(x.name), summary: str(x.summary),
-      qty: L.num(x.qty), unit: str(x.unit),
-      listPrice: L.num(x.listPrice), unitPrice: L.num(x.unitPrice), amount: L.num(x.amount),
-      parts: arr(x.parts).slice(0, 80).map((p) => ({ partNo: str(p.partNo), desc: str(p.desc), qty: L.num(p.qty) })).filter((p) => p.partNo || p.desc),
-      specs: arr(x.specs).map((s) => ({ cat: str(s.cat), detail: str(s.detail), spec: str(s.spec) })).filter((s) => s.cat || s.detail || s.spec),
-      note: str(x.note),
-      match: M.includes(x.match) ? (rid ? x.match : 'extra') : (rid ? 'partial' : 'extra'),
-      matchNote: str(x.matchNote)
-    };
-  }).filter((q) => q.model || q.name || q.unitPrice !== null || q.amount !== null);
-  const t = res.totals || {};
-  const tm = res.terms || {};
-  return {
-    id: L.uid('qt'),
-    vendorId: null,
-    vendorName: str(res.vendor && res.vendor.name),
-    vendorContact: { contact: str(res.vendor && res.vendor.contact), phone: str(res.vendor && res.vendor.phone), email: str(res.vendor && res.vendor.email) },
-    receivedAt: L.today(),
-    quoteNo: str(res.quoteNo),
-    quoteDate: L.parseYmd(res.quoteDate) ? L.ymd(L.parseYmd(res.quoteDate)) : str(res.quoteDate),
-    vat: ['included', 'excluded', 'unknown'].includes(res.vat) ? res.vat : 'unknown',
-    items: qItems,
-    totals: { supply: L.num(t.supply), vat: L.num(t.vat), total: L.num(t.total) },
-    terms: { validUntil: str(tm.validUntil), warranty: str(tm.warranty), delivery: str(tm.delivery), payment: str(tm.payment), shipping: str(tm.shipping), note: str(tm.note) },
-    deviations: arr(res.deviations).map((d) => ({ id: L.uid('dv'), reqItemId: reqId(d.reqNo), title: str(d.title), reason: str(d.reason) })).filter((d) => d.title)
-  };
-};
-
-AI.parseVendorQuote = async function (project, src, signal) {
-  const res = await AI.call(AI.vendorPrompt(project, src.text, src.images.length, L.today()), src.images, signal);
-  if (!res || typeof res !== 'object') throw { code: 'invalid_json' };
-  return AI.quoteFromResult(res, project);
+  if (text.length > Files.MAX_TEXT) text = text.slice(0, Files.MAX_TEXT) + '\n…(이하 생략)';
+  return text;
 };
 
 /* ---- doc.js ---- */
@@ -2527,28 +2331,68 @@ function StepNav({ prev, next, nextLabel, onPrev, onNext, extra, nextDisabled })
   </div>`;
 }
 
-function FileChips({ files, onRemove }) {
+function fileInfo(f) {
+  if (f.status === 'reading') return '읽는 중';
+  if (f.status === 'error') return f.note || '읽지 못함';
+  if (f.kind === 'images') return '이미지 ' + (f.images || []).length + '장';
+  return L.fmt((f.text || '').length) + '자';
+}
+
+function FileChips({ files, onRemove, openId, onOpen }) {
   if (!files.length) return null;
-  return html`<div class="files">${files.map((f) => html`<span key=${f.id || f.name} class="fchip" title=${f.note || ''}>
-    ${f.status === 'reading' ? html`<span class="spin" style="width:12px;height:12px;color:var(--brand)"></span>` : html`<${Icon} name="file" size=${14} />`}
-    <span class="nm">${f.name}</span>
-    <span class=${'xs ' + (f.status === 'error' ? 'gp-low' : 'faint')}>${f.status === 'reading' ? '읽는 중' : f.status === 'error' ? (f.note || '읽지 못함') : (f.kind === 'images' ? '이미지 ' + (f.images || []).length + '장' : L.fmt((f.text || '').length) + '자')}</span>
-    ${onRemove ? html`<button aria-label=${f.name + ' 빼기'} onClick=${() => onRemove(f)}><${Icon} name="x" size=${13} /></button>` : null}
-  </span>`)}</div>`;
+  return html`<div class="files">${files.map((f) => {
+    const canOpen = onOpen && f.status === 'ready';
+    return html`<span key=${f.id || f.name} class=${'fchip' + (openId === f.id ? ' on' : '')} title=${f.note || ''}>
+      ${f.status === 'reading' ? html`<span class="spin" style="width:12px;height:12px;color:var(--brand)"></span>` : html`<${Icon} name="file" size=${14} />`}
+      ${canOpen ? html`<span class="nm link" role="button" tabindex="0" onClick=${() => onOpen(openId === f.id ? null : f.id)}
+          onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(openId === f.id ? null : f.id); } }}>${f.name}</span>` : html`<span class="nm">${f.name}</span>`}
+      <span class=${'xs ' + (f.status === 'error' ? 'gp-low' : 'faint')}>${fileInfo(f)}</span>
+      ${onRemove ? html`<button aria-label=${f.name + ' 빼기'} onClick=${() => onRemove(f)}><${Icon} name="x" size=${13} /></button>` : null}
+    </span>`;
+  })}</div>`;
+}
+
+function SheetTables({ sheets }) {
+  return sheets.map((sh, k) => html`<div key=${k} class="stack s8" style="margin-bottom:12px">
+    ${sheets.length > 1 ? html`<b class="small">${sh.name}</b>` : null}
+    <table class="tbl sheet"><tbody>${sh.rows.map((r, i) => html`<tr key=${i}>${r.map((v, j) => html`<td key=${j}>${v}</td>`)}</tr>`)}</tbody></table>
+  </div>`);
+}
+
+/* 첨부 내용 보기: 엑셀·PDF·워드·메일은 읽은 글자, 이미지·스캔 PDF는 그림 */
+function FilePreview({ file, onClose }) {
+  const [urls, setUrls] = useState([]);
+  useEffect(() => {
+    const u = ((file && file.images) || []).map((b) => URL.createObjectURL(b));
+    setUrls(u);
+    return () => u.forEach((x) => URL.revokeObjectURL(x));
+  }, [file]);
+  if (!file) return null;
+  return html`<div class="fpreview">
+    <div class="fpreview-h"><${Icon} name="file" size=${14} /><b class="small" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${file.name}</b>
+      <span class="xs faint">${file.note || ''}</span>
+      ${file.text ? html`<button class="btn ghost sm" onClick=${() => copyText(file.text, '파일 내용')}><${Icon} name="copy" size=${13} />복사</button>` : null}
+      <button class="btn ghost icon sm" aria-label="미리보기 닫기" onClick=${onClose}><${Icon} name="x" size=${14} /></button></div>
+    <div class="fpreview-b">
+      ${urls.map((u, i) => html`<img key=${i} src=${u} alt=${file.name + ' ' + (i + 1)} />`)}
+      ${file.sheets && file.sheets.length ? html`<${SheetTables} sheets=${file.sheets} />` : file.text ? html`<pre>${file.text}</pre>` : null}
+      ${!urls.length && !file.text ? html`<span class="small faint">보여줄 내용이 없습니다.</span>` : null}
+    </div>
+  </div>`;
 }
 
 function useFileReader() {
   const [files, setFiles] = useState([]);
-  const add = async (list) => {
-    const maxImages = (RT.imageLimits && RT.imageLimits.maxCount) || 0;
+  const add = async (list, onReady) => {
     for (const f of list) {
       const id = L.uid('f');
       setFiles((fs) => fs.concat([{ id: id, name: f.name || '붙여넣은 이미지', status: 'reading' }]));
       try {
-        const r = await AI.extractFile(f, { maxImages: maxImages });
-        let status = r.kind === 'unsupported' ? 'error' : 'ready';
-        if (r.kind === 'images' && !maxImages) { status = 'error'; r.note = '이미지는 AI 이미지 읽기가 가능한 화면에서만 쓸 수 있습니다'; }
-        setFiles((fs) => fs.map((x) => (x.id === id ? Object.assign({}, x, r, { status: status }) : x)));
+        const r = await Files.extractFile(f);
+        const status = r.kind === 'unsupported' ? 'error' : 'ready';
+        const done = Object.assign({ id: id }, r, { status: status });
+        if (status === 'ready' && onReady && onReady(done)) setFiles((fs) => fs.filter((x) => x.id !== id));
+        else setFiles((fs) => fs.map((x) => (x.id === id ? done : x)));
       } catch (e) {
         setFiles((fs) => fs.map((x) => (x.id === id ? Object.assign({}, x, { status: 'error', note: '읽지 못했습니다' }) : x)));
         console.warn(e);
@@ -2559,54 +2403,29 @@ function useFileReader() {
   return { files: files, add: add, remove: remove, clear: () => setFiles([]) };
 }
 
-function AiOff() {
-  return html`<div class="note info"><${Icon} name="spark" /><div>AI 정리를 쓸 수 없는 상태입니다. 표에 직접 입력해 진행할 수 있어요.</div></div>`;
-}
-
 /* ===================== 1. 고객 요청 ===================== */
 function StepRequest({ p, up, go }) {
   const fr = useFileReader();
-  const [run, setRun] = useState(null);
-  const [err, setErr] = useState('');
-  const [pending, setPending] = useState(null);
+  const [openId, setOpenId] = useState(null);
   const req = p.request || {};
-  const saved = (req.files || []).map((f, i) => ({ id: 'saved' + i, name: f.name, note: f.note, text: f.text, status: 'ready', kind: 'text', saved: true }));
-  const [useSaved, setUseSaved] = useState(true);
-  const allFiles = fr.files.concat(useSaved ? saved : []);
-  const src = AI.collectSources(req.raw, allFiles);
-  const hasInput = !!(src.text || src.images.length);
-  const reading = fr.files.some((f) => f.status === 'reading');
+  const saved = (req.files || []).map((f, i) => ({ id: 'saved' + i, idx: i, name: f.name, note: f.note, text: f.text, sheets: f.sheets, status: 'ready', kind: 'text', saved: true }));
+  const shown = saved.concat(fr.files);
+  const opened = shown.find((f) => f.id === openId) || null;
   const c = p.customer || {};
   const setC = (k, v) => up((x) => { x.customer = x.customer || {}; x.customer[k] = v; });
 
-  async function runAI() {
-    setErr('');
-    const ctl = new AbortController();
-    setRun({ started: Date.now(), ctl: ctl });
-    try {
-      const res = await AI.normalizeRequest(src, ctl.signal);
-      const keep = allFiles.filter((f) => f.status === 'ready' && f.text).map((f) => ({ name: f.name, note: f.note || '', text: String(f.text).slice(0, 30000) }));
-      up((x) => { x.request = Object.assign({}, x.request || {}, { files: keep, parsedAt: Date.now() }); });
-      if (!res.items.length) { setErr('원문에서 품목을 찾지 못했습니다. 내용을 확인하거나 직접 입력해 주세요.'); return; }
-      if ((p.items || []).length) setPending(res); else apply(res, 'replace');
-    } catch (e) {
-      if (!e || e.code !== 'cancelled') setErr(AI.errText(e));
-    } finally { setRun(null); }
-  }
-  function apply(res, mode) {
-    up((x) => {
-      x.customer = x.customer || {};
-      ['company', 'contact', 'phone', 'email'].forEach((k) => { if (!str(x.customer[k]) && res.customer[k]) x.customer[k] = res.customer[k]; });
-      if (!str(x.title) && res.title) x.title = res.title;
-      x.items = mode === 'append' ? (x.items || []).concat(res.items) : res.items;
-      x.conditions = x.conditions || {};
-      ['dueDate', 'deliveryPlace', 'install', 'other'].forEach((k) => { if (!str(x.conditions[k]) && res.conditions[k]) x.conditions[k] = res.conditions[k]; });
-      x.questions = mode === 'append' ? (x.questions || []).concat(res.questions) : res.questions;
-    });
-    setPending(null);
-    toast('요청 품목 ' + res.items.length + '개를 정리했습니다');
-    go(2);
-  }
+  // 글자로 읽힌 파일은 견적 건에 저장해 다음에도 볼 수 있게 한다(이미지는 이번 화면에서만).
+  const keep = (f) => {
+    if (!f.text) return false;
+    up((x) => { x.request = Object.assign({}, x.request || {}); x.request.files = (x.request.files || []).concat([Object.assign({ name: f.name, note: f.note || '', text: String(f.text).slice(0, 30000) }, f.sheets ? { sheets: f.sheets } : {})]); });
+    return true;
+  };
+  const addFiles = (list) => fr.add(list, keep);
+  const removeFile = (f) => {
+    if (openId === f.id) setOpenId(null);
+    if (f.saved) up((x) => { x.request.files.splice(f.idx, 1); });
+    else fr.remove(f);
+  };
 
   return html`<div class="stack s16">
     <div class="grid2" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);align-items:start">
@@ -2615,14 +2434,15 @@ function StepRequest({ p, up, go }) {
         <div class="panel-b stack">
           <textarea id="req-raw" class="textarea" rows="11" placeholder=${'예) 안녕하세요, AI 학습용 GPU 서버 2대 견적 부탁드립니다.\nGPU는 RTX Pro 6000 4장, 메모리 256GB, SSD 480GB 2개…'} value=${req.raw || ''}
             onInput=${(e) => up((x) => { x.request = Object.assign({}, x.request || {}, { raw: e.target.value }); })}
-            onPaste=${(e) => { const fl = Array.from((e.clipboardData && e.clipboardData.files) || []); if (fl.length) { e.preventDefault(); fr.add(fl); } }}></textarea>
-          <${FileDrop} onFiles=${fr.add} title="요청 파일 추가" sub="엑셀 · PDF · 워드 · 이미지 · .eml (스크린샷은 붙여넣기도 됩니다)" />
-          <${FileChips} files=${fr.files} onRemove=${fr.remove} />
-          ${saved.length ? html`<div class="row small muted"><label class="check"><input type="checkbox" checked=${useSaved} onChange=${(e) => setUseSaved(e.target.checked)} />이전에 읽은 파일 ${saved.length}개 함께 사용</label><span class="faint">${saved.map((f) => f.name).join(', ')}</span></div>` : null}
+            onPaste=${(e) => { const fl = Array.from((e.clipboardData && e.clipboardData.files) || []); if (fl.length) { e.preventDefault(); addFiles(fl); } }}></textarea>
+          <${FileDrop} onFiles=${addFiles} title="요청 파일 추가" sub="엑셀 · PDF · 워드 · 이미지 · .eml (스크린샷은 붙여넣기도 됩니다)" />
+          <${FileChips} files=${shown} onRemove=${removeFile} openId=${openId} onOpen=${setOpenId} />
+          ${shown.some((f) => f.status === 'ready') && !opened ? html`<div class="xs faint">파일 이름을 누르면 내용을 볼 수 있습니다. 이미지는 이 화면에서만 보이고 저장되지 않습니다.</div>` : null}
+          <${FilePreview} file=${opened} onClose=${() => setOpenId(null)} />
         </div>
       </section>
       <section class="panel">
-        <div class="panel-h"><h3>고객 정보</h3><span class="sub">AI 정리 시 빈 칸만 채웁니다</span></div>
+        <div class="panel-h"><h3>고객 정보</h3></div>
         <div class="panel-b stack">
           <${Field} label="건명"><input id="p-title" class="input" value=${p.title || ''} placeholder="예) AI GPU서버 도입" onInput=${(e) => up((x) => { x.title = e.target.value; })} /><//>
           <${Field} label="고객사"><input id="c-company" class="input" value=${c.company || ''} placeholder="예) 홍길동손해보험" onInput=${(e) => setC('company', e.target.value)} /><//>
@@ -2635,18 +2455,7 @@ function StepRequest({ p, up, go }) {
       </section>
     </div>
 
-    ${!RT.sample ? html`<${AiOff} />` : null}
-    ${run ? html`<${AiRunning} label="고객 요청을 품목표로 정리하는 중" started=${run.started} onStop=${() => run.ctl.abort()} />` : null}
-    ${err ? html`<div class="note bad">${err}</div>` : null}
-    ${pending ? html`<div class="note warn" style="align-items:center;flex-wrap:wrap">
-      <div style="flex:1;min-width:220px">AI가 품목 ${pending.items.length}개를 찾았습니다. 이미 정리된 품목 ${(p.items || []).length}개가 있습니다.</div>
-      <button class="btn sm primary" onClick=${() => apply(pending, 'replace')}>새 결과로 바꾸기</button>
-      <button class="btn sm" onClick=${() => apply(pending, 'append')}>뒤에 추가</button>
-      <button class="btn sm ghost" onClick=${() => setPending(null)}>취소</button>
-    </div>` : null}
-
-    <${StepNav} next="AI로 요청 정리" nextLabel=${html`<${Icon} name="spark" />AI로 요청 정리`} nextDisabled=${!RT.sample || !hasInput || !!run || reading} onNext=${runAI}
-      extra=${html`<button class="btn" onClick=${() => go(2)}>${(p.items || []).length ? '정리된 품목 보기' : '직접 입력하기'}</button>`} />
+    <${StepNav} next="요청 정리" nextLabel=${(p.items || []).length ? '정리된 품목 보기' : '품목표 입력하기'} onNext=${() => go(2)} />
   </div>`;
 }
 
@@ -2674,11 +2483,28 @@ function ItemsTable({ p, up }) {
             <${ConfirmBtn} small icon="trash" label="품목 삭제" onConfirm=${() => up((x) => { x.items.splice(i, 1); })} />
           </div></td>
         </tr>`)}
-        ${!items.length ? html`<tr><td colspan="8"><div class="empty" style="padding:24px"><b>아직 품목이 없습니다</b><span class="small">1단계에서 AI로 정리하거나 아래 버튼으로 직접 추가하세요.</span></div></td></tr>` : null}
+        ${!items.length ? html`<tr><td colspan="8"><div class="empty" style="padding:24px"><b>아직 품목이 없습니다</b><span class="small">아래 [품목 추가] 버튼으로 고객 요청 품목을 한 줄씩 입력하세요.</span></div></td></tr>` : null}
       </tbody>
     </table></div>
     <div><button class="btn sm" onClick=${add}><${Icon} name="plus" size=${14} />품목 추가</button></div>
   </div>`;
+}
+
+/* 품목표를 입력하면서 옆에 띄워 보는 1단계 원문 · 첨부 */
+function RequestSource({ p }) {
+  const req = p.request || {};
+  const files = (req.files || []).map((f, i) => ({ id: 'saved' + i, name: f.name, note: f.note, text: f.text, sheets: f.sheets, status: 'ready', kind: 'text' }));
+  const [openId, setOpenId] = useState(null);
+  if (!str(req.raw) && !files.length) return null;
+  const opened = files.find((f) => f.id === openId) || null;
+  return html`<details class="panel">
+    <summary class="panel-h" style="cursor:pointer"><h3>고객 요청 원문 보기</h3><span class="sub">${[str(req.raw) ? '붙여넣은 내용' : '', files.length ? '첨부 ' + files.length + '개' : ''].filter(Boolean).join(' · ')}</span></summary>
+    <div class="panel-b stack s8">
+      ${str(req.raw) ? html`<div class="fpreview"><div class="fpreview-b"><pre>${req.raw}</pre></div></div>` : null}
+      <${FileChips} files=${files} openId=${openId} onOpen=${setOpenId} />
+      <${FilePreview} file=${opened} onClose=${() => setOpenId(null)} />
+    </div>
+  </details>`;
 }
 
 function StepItems({ p, up, settings, go }) {
@@ -2699,6 +2525,7 @@ function StepItems({ p, up, settings, go }) {
     copyText(lines.join('\n'), '고객 확인 문구');
   }
   return html`<div class="stack s16">
+    <${RequestSource} p=${p} />
     <section class="stack s8">
       <div class="section-title"><h3>요청 품목</h3><span class="hint">매입처에 그대로 전달되는 표입니다. 사양은 구성 요소별로 한 줄씩 적으면 읽기 쉽습니다.</span></div>
       <${ItemsTable} p=${p} up=${up} />
@@ -2721,7 +2548,7 @@ function StepItems({ p, up, settings, go }) {
             <${AutoText} value=${q.text} className=${q.done ? 'faint' : ''} onInput=${(v) => up((x) => { x.questions[i].text = v; })} />
             <button class="btn ghost icon sm" aria-label="삭제" style="margin-top:4px" onClick=${() => up((x) => { x.questions.splice(i, 1); })}><${Icon} name="x" size=${14} /></button>
           </div>`)}
-          ${!qs.length ? html`<p class="small muted">AI가 정리할 때 수량 누락이나 모호한 사양이 있으면 여기에 질문으로 남깁니다.</p>` : null}
+          ${!qs.length ? html`<p class="small muted">수량 누락이나 모호한 사양처럼 고객에게 물어볼 점을 적어 두세요.</p>` : null}
           <div class="row">
             <button class="btn sm" onClick=${() => up((x) => { x.questions = (x.questions || []).concat([{ id: L.uid('q'), text: '', done: false }]); })}><${Icon} name="plus" size=${14} />확인 사항 추가</button>
             ${open.length ? html`<button class="btn sm" onClick=${copyAsk}><${Icon} name="copy" size=${14} />고객 확인 문구 복사</button>` : null}
@@ -2896,6 +2723,12 @@ function QuoteCard({ p, qt, qi, up, vendors, saveVendor, open, onToggle }) {
         ${qt.vendorName ? html`<button class="btn sm" onClick=${async () => { const id = await saveVendor({ name: qt.vendorName, contact: (qt.vendorContact && qt.vendorContact.contact) || '', email: (qt.vendorContact && qt.vendorContact.email) || '', phone: (qt.vendorContact && qt.vendorContact.phone) || '' }); if (id) setQ((t) => { t.vendorId = id; }); }}>'${qt.vendorName}' 새 매입처로 저장</button>` : null}
       </div>` : null}
       ${open ? html`<div class="stack s16">
+        ${qt.source && qt.source.text ? html`<details class="fpreview" open>
+          <summary class="fpreview-h" style="cursor:pointer"><${Icon} name="file" size=${14} /><b class="small" style="flex:1">견적 원본</b><span class="xs faint">${(qt.source.files || []).join(', ')}</span></summary>
+          <div class="fpreview-b" style="max-height:340px">${qt.source.sheets && qt.source.sheets.length
+            ? html`${qt.source.rest ? html`<pre style="margin-bottom:12px">${qt.source.rest}</pre>` : null}<${SheetTables} sheets=${qt.source.sheets} />`
+            : html`<pre>${qt.source.text}</pre>`}</div>
+        </details>` : null}
         <div class="tbl-wrap"><table class="tbl" style="min-width:1040px">
           <thead><tr><th style="width:17%">요청 품목</th><th>모델 · 품명</th><th class="num" style="width:70px">수량</th><th style="width:60px">단위</th><th class="num" style="width:130px">제안 단가</th><th class="num" style="width:140px">금액</th><th style="width:118px">대응</th><th style="width:70px"></th></tr></thead>
           <tbody>${qt.items.map((it, k) => {
@@ -3003,66 +2836,53 @@ function StepQuotes({ p, up, vendors, go, saveVendor }) {
   const fr = useFileReader();
   const [raw, setRaw] = useState('');
   const [vsel, setVsel] = useState('');
-  const [run, setRun] = useState(null);
-  const [err, setErr] = useState('');
   const [openQ, setOpenQ] = useState(null);
+  const [openF, setOpenF] = useState(null);
   const quotes = p.quotes || [];
   const requested = ((p.rfq && p.rfq.targets) || []).map((t) => t.vendorId);
   const vlist = vendors.slice().sort((a, b) => (requested.includes(b.id) ? 1 : 0) - (requested.includes(a.id) ? 1 : 0));
-  const src = AI.collectSources(raw, fr.files);
-  const hasInput = !!(src.text || src.images.length);
   const reading = fr.files.some((f) => f.status === 'reading');
+  const openedFile = fr.files.find((f) => f.id === openF) || null;
 
-  async function runAI() {
-    setErr('');
-    const ctl = new AbortController();
-    setRun({ started: Date.now(), ctl: ctl });
-    try {
-      const qt = await AI.parseVendorQuote(p, src, ctl.signal);
-      let v = vsel ? vendors.find((x) => x.id === vsel) : null;
-      if (!v && qt.vendorName) v = vendors.find((x) => L.normName(x.name) === L.normName(qt.vendorName) || (L.normName(x.name) && L.normName(qt.vendorName).includes(L.normName(x.name))));
-      if (v) { qt.vendorId = v.id; qt.vendorName = v.name; }
-      qt.source = { files: fr.files.filter((f) => f.status === 'ready').map((f) => f.name), text: src.text.slice(0, 20000) };
-      if (!qt.items.length) { setErr('견적서에서 품목을 찾지 못했습니다. 원문을 확인하거나 [직접 입력]을 써 주세요.'); return; }
-      up((x) => { x.quotes = (x.quotes || []).concat([qt]); });
-      setRaw(''); fr.clear(); setVsel(''); setOpenQ(qt.id);
-      toast((qt.vendorName || '매입') + ' 견적을 읽고 검토했습니다');
-    } catch (e) {
-      if (!e || e.code !== 'cancelled') setErr(AI.errText(e));
-    } finally { setRun(null); }
-  }
-  function addManual() {
+  // 요청 품목마다 한 줄씩 미리 만든 빈 매입 견적. 붙여넣은 원문·첨부 글자는 원본으로 함께 보관한다.
+  function addQuote() {
     const v = vsel ? vendors.find((x) => x.id === vsel) : null;
+    const text = Files.collectText(raw, fr.files);
     const qt = { id: L.uid('qt'), vendorId: v ? v.id : null, vendorName: v ? v.name : '', vendorContact: {}, receivedAt: L.today(), quoteNo: '', quoteDate: L.today(), vat: 'excluded',
       items: (p.items || []).map((it) => ({ id: L.uid('qi'), reqItemId: it.id, model: it.model || '', name: it.name, summary: '', qty: it.qty, unit: it.unit, listPrice: null, unitPrice: null, amount: null, parts: [], specs: [], note: '', match: 'exact', matchNote: '' })),
       totals: { supply: null, vat: null, total: null }, terms: { validUntil: '', warranty: '', delivery: '', payment: '', shipping: '', note: '' }, deviations: [] };
+    if (text) {
+      const ready = fr.files.filter((f) => f.status === 'ready');
+      const sheets = [];
+      ready.forEach((f) => (f.sheets || []).forEach((sh) => sheets.push({ name: f.name + (f.sheets.length > 1 ? ' · ' + sh.name : ''), rows: sh.rows })));
+      qt.source = { files: ready.map((f) => f.name), text: text.slice(0, 20000) };
+      // 엑셀은 표로 보여 주고, 붙여넣은 본문·PDF·메일 등 나머지는 글자로 함께 보관
+      if (sheets.length) { qt.source.sheets = sheets; qt.source.rest = Files.collectText(raw, ready.filter((f) => !f.sheets)).slice(0, 20000); }
+    }
     up((x) => { x.quotes = (x.quotes || []).concat([qt]); });
-    setOpenQ(qt.id);
+    setRaw(''); fr.clear(); setVsel(''); setOpenF(null); setOpenQ(qt.id);
   }
 
   return html`<div class="stack s16">
     <section class="panel">
-      <div class="panel-h"><h3>매입 견적 추가</h3><span class="sub">받은 견적서를 그대로 넣으면 요청 품목과 맞춰 보고 검토합니다</span></div>
+      <div class="panel-h"><h3>매입 견적 추가</h3><span class="sub">받은 견적서를 열어 두고 단가·금액을 표에 옮겨 적으면 요청 품목과 맞춰 검토합니다</span></div>
       <div class="panel-b stack">
         <div class="grid2" style="grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);align-items:start">
           <div class="stack s8">
             <${Field} label="매입처"><select id="q-vendor" class="select" value=${vsel} onChange=${(e) => setVsel(e.target.value)}>
-              <option value="">견적서에서 자동 인식</option>
+              <option value="">나중에 선택</option>
               ${vlist.map((v) => html`<option key=${v.id} value=${v.id}>${v.name}${requested.includes(v.id) ? ' · 요청함' : ''}</option>`)}
             </select><//>
-            <${FileDrop} onFiles=${fr.add} title="견적서 파일 추가" sub="엑셀 · PDF · 이미지 · .eml" />
-            <${FileChips} files=${fr.files} onRemove=${fr.remove} />
+            <${FileDrop} onFiles=${fr.add} title="견적서 파일 열기" sub="엑셀 · PDF · 이미지 · .eml — 내용을 바로 보여 줍니다" />
+            <${FileChips} files=${fr.files} onRemove=${(f) => { if (openF === f.id) setOpenF(null); fr.remove(f); }} openId=${openF} onOpen=${setOpenF} />
           </div>
-          <${Field} label="또는 메일 본문 붙여넣기"><textarea id="q-raw" class="textarea" rows="7" value=${raw} placeholder="견적 메일 본문이나 엑셀에서 복사한 표를 붙여넣으세요" onInput=${(e) => setRaw(e.target.value)}
+          <${Field} label="메일 본문 붙여넣기 (선택)"><textarea id="q-raw" class="textarea" rows="7" value=${raw} placeholder="견적 메일 본문을 붙여넣어 두면 견적과 함께 보관됩니다" onInput=${(e) => setRaw(e.target.value)}
             onPaste=${(e) => { const fl = Array.from((e.clipboardData && e.clipboardData.files) || []); if (fl.length) { e.preventDefault(); fr.add(fl); } }}></textarea><//>
         </div>
-        ${!RT.sample ? html`<${AiOff} />` : null}
-        ${run ? html`<${AiRunning} label="매입 견적을 읽고 요청 품목과 맞춰 보는 중" started=${run.started} onStop=${() => run.ctl.abort()} />` : null}
-        ${err ? html`<div class="note bad">${err}</div>` : null}
+        <${FilePreview} file=${openedFile} onClose=${() => setOpenF(null)} />
         <div class="row">
-          <button class="btn primary" disabled=${!RT.sample || !hasInput || !!run || reading} onClick=${runAI}><${Icon} name="spark" />AI로 읽고 검토</button>
-          <button class="btn" onClick=${addManual}>직접 입력</button>
-          ${!(p.items || []).length ? html`<span class="small" style="color:var(--warn)">요청 품목이 없으면 일치 여부를 검토할 수 없습니다(2단계).</span>` : null}
+          <button class="btn primary" disabled=${reading} onClick=${addQuote}><${Icon} name="plus" />매입 견적 추가</button>
+          ${!(p.items || []).length ? html`<span class="small" style="color:var(--warn)">요청 품목이 없으면 일치 여부를 검토할 수 없습니다(2단계).</span>` : html`<span class="small muted">요청 품목 ${(p.items || []).length}개가 미리 채워진 표가 만들어집니다.</span>`}
         </div>
       </div>
     </section>
@@ -3577,11 +3397,8 @@ function App() {
     (async () => {
       if (auth === 'ok') {
         Store.init('api');
-        RT.sample = AI.serverSample;
-        RT.imageLimits = (await AI.serverSample.limits()).images;
       } else {
         Store.init(null);
-        RT.sample = null;
       }
       RT.ready = true; RT.mode = auth === 'ok' ? 'api' : 'local';
       unsubs.push(Store.onStatus(setSs));
@@ -3693,7 +3510,7 @@ function Welcome({ list, onNew, onOpen, creating }) {
   return html`<div class="stack s20">
     <section class="panel"><div class="panel-b stack s16" style="padding:24px">
       <div class="stack s8" style="gap:4px"><h2 style="font-size:22px;letter-spacing:-.02em">고객 요청부터 원가분석표까지 한 화면에서</h2>
-        <p class="muted">서식이 제각각인 고객 요청과 매입 견적은 AI가 표로 정리하고, 매출 견적서는 유니포인트 양식 그대로 만듭니다.</p></div>
+        <p class="muted">고객 요청과 매입 견적을 표로 정리하고, 매출 견적서는 유니포인트 양식 그대로 만듭니다.</p></div>
       <div class="grid3">${flow.map((s) => html`<div key=${s.n} class="row" style="flex-wrap:nowrap;align-items:flex-start;gap:10px">
         <span class="chip brand num" style="width:24px;justify-content:center;padding:0">${s.n}</span>
         <div><b>${s.title}</b><div class="small muted">${s.sub}</div></div></div>`)}</div>

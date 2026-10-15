@@ -7,7 +7,7 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const LOGO_DATA = 'data:image/png;base64,' + LOGO_B64;
 
 /* ---------- 런타임(Claude 기능) ---------- */
-const RT = { ready: false, mode: 'init', db: null, sample: null, downloads: null, user: null, uid: null, imageLimits: null, canWrite: null };
+const RT = { ready: false, mode: 'init', db: null, downloads: null, user: null, uid: null, canWrite: null };
 
 /* ---------- 외부 라이브러리(필요할 때만 로드) ---------- */
 const LIBS = {
@@ -390,18 +390,6 @@ function FileDrop({ onFiles, accept, title, sub, multiple }) {
       <span class="small muted">${sub || '엑셀 · PDF · 워드 · 이미지 · 텍스트'}</span>
     </div>
     <input ref=${inp} type="file" hidden multiple=${multiple !== false} accept=${accept || ''} onChange=${(e) => { take(e.target.files); e.target.value = ''; }} />
-  </div>`;
-}
-
-/* AI 진행 표시 */
-function AiRunning({ label, started, onStop }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
-  const sec = Math.max(0, Math.round((now - started) / 1000));
-  return html`<div class="ai-run" role="status">
-    <span class="spin"></span>
-    <div style="flex:1;min-width:0"><b>${label}</b><div class="small" style="opacity:.85">${sec < 4 ? '시작하는 중…' : sec + '초 · 보통 20~60초 걸립니다'}</div></div>
-    ${onStop ? html`<button class="btn sm" onClick=${onStop}><${Icon} name="stop" size=${14} />중지</button>` : null}
   </div>`;
 }
 
